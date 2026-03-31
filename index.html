@@ -132,6 +132,12 @@ textarea { resize:vertical; min-height:80px; }
 .pgn-display { background:white; border:1px solid var(--border); padding:0.85rem; font-family:'JetBrains Mono',monospace; font-size:0.73rem; line-height:1.7; word-break:break-word; white-space:pre-wrap; max-height:230px; overflow-y:auto; margin-bottom:0.9rem; }
 .modal-actions { display:flex; gap:0.6rem; flex-wrap:wrap; }
 .hist-list { display:flex; flex-direction:column; gap:0.5rem; }
+.rich-section { margin-bottom:1rem; }
+.rich-title { font-family:'JetBrains Mono',monospace; font-size:0.6rem; text-transform:uppercase; letter-spacing:0.08em; color:var(--muted); margin-bottom:0.35rem; }
+.rich-copy { line-height:1.7; }
+.line-card { border:1px solid var(--border); background:var(--cream); padding:0.8rem 0.9rem; margin-top:0.6rem; }
+.line-seq { font-family:'JetBrains Mono',monospace; font-size:0.68rem; line-height:1.7; white-space:pre-wrap; }
+.mini-note { font-family:'JetBrains Mono',monospace; font-size:0.58rem; color:var(--muted); margin-top:0.35rem; }
 @media(max-width:660px){
   .gl-hdr,.gl-row { grid-template-columns:2fr 0.7fr 0.7fr 60px; }
   .gl-hdr>*:nth-child(2),.gl-hdr>*:nth-child(5),
@@ -295,7 +301,7 @@ textarea { resize:vertical; min-height:80px; }
   <div class="form-row">
     <div class="fg"><label>Name</label><input type="text" id="opp-name" placeholder="e.g. Joel Benjamin"></div>
     <div class="fg"><label>ELO</label><input type="number" id="opp-elo" placeholder="2600"></div>
-    <div class="fg"><label>Style</label><select id="opp-style"><option value="">— select —</option><option>Aggressive / Tactical</option><option>Positional / Strategic</option><option>Universal / All-around</option><option>Endgame Specialist</option><option>Theory Expert</option></select></div>
+    <div class="fg"><label>Style (Optional)</label><select id="opp-style"><option value="">Auto-detect from library</option><option>Aggressive / Tactical</option><option>Positional / Strategic</option><option>Universal / All-around</option><option>Endgame Specialist</option><option>Theory Expert</option></select></div>
   </div>
   <div class="form-row"><div class="fg" style="flex:2"><label>Known Tendencies</label><textarea id="opp-notes" placeholder="e.g. Prefers 1.e4, strong in open positions…"></textarea></div></div>
   <label style="margin-bottom:0.4rem;display:block">Focus Areas</label>
@@ -465,6 +471,7 @@ let boardFlipped = false;
 let gameLibrary = [];
 let activeModalGame = null;
 let prep = { opponentName:'Joel Benjamin', myColor:'w' };
+let openingPrepLines = [];
 let GS = { board:[], turn:'w', castling:{wK:1,wQ:1,bK:1,bQ:1}, ep:null, history:[], selSq:null, validMoves:[] };
 
 function fenToBoard(fen){
@@ -1248,6 +1255,87 @@ function filterGamesByOpeningQuery(query){
   return games.filter(g => `${g.opening || ''} ${g.eco || ''}`.toLowerCase().includes(q));
 }
 
+function escapeHtml(str){
+  return String(str || '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
+}
+
+function depthToPly(depth){
+  if ((depth || '').includes('Surface')) return 10;
+  if ((depth || '').includes('Intermediate')) return 24;
+  return 36;
+}
+
+function loadRawSequenceToBoard(tokens){
+  const state = createInitialState();
+  for (const raw of tokens || []) {
+    const mv = sanToMove(state, raw);
+    if (!mv) break;
+    applyMoveToState(state, mv.from, mv.to, mv.promotion);
+  }
+  GS.board = state.board;
+  GS.turn = state.turn;
+  GS.castling = state.castling;
+  GS.ep = state.ep;
+  GS.history = state.history;
+  GS.selSq = null;
+  GS.validMoves = [];
+  switchTab('prob');
+  updateMoveList();
+  updateProb();
+  renderBoard();
+}
+
+function loadOpeningPrepLine(i){
+  const item = openingPrepLines[i];
+  if (!item) return;
+  loadRawSequenceToBoard(item.rawMoves);
+}
+
+function inferStyleFromLibrary(stats){
+  const names = stats.topOpenings.map(([name]) => name.toLowerCase()).join(' ');
+  const drawRate = stats.total ? stats.resultCounts.draw / stats.total : 0;
+  if (/sicilian|kings indian|benoni|dragon|najdorf|grunfeld|attack|gambit/.test(names)) return 'Aggressive / Tactical';
+  if (/caro|qgd|english|slav|catalan|petroff|queen pawn|russian game/.test(names) || drawRate > 0.4) return 'Positional / Strategic';
+  if (/endgame|rook endgame/.test(names)) return 'Endgame Specialist';
+  return 'Universal / All-around';
+}
+
+function collectOpeningPrepLines(subset, plyDepth){
+  const grouped = {};
+  subset.forEach(g => {
+    const raw = (g.rawMoves || []).slice(0, plyDepth);
+    if (!raw.length) return;
+    const key = raw.join(' ');
+    if (!grouped[key]) grouped[key] = { count:0, rawMoves:raw, opening:g.opening || g.eco || 'Unlabelled', example:g };
+    grouped[key].count += 1;
+  });
+  return Object.values(grouped).sort((a,b)=>b.count-a.count).slice(0,3);
+}
+
+function openingPerformance(subset){
+  const byOpening = {};
+  subset.forEach(g => {
+    const key = g.opening || g.eco || 'Unlabelled';
+    if (!byOpening[key]) byOpening[key] = { total:0, score:0 };
+    byOpening[key].total += 1;
+    const res = opponentPerspectiveResult(g);
+    byOpening[key].score += res === 'win' ? 1 : res === 'draw' ? 0.5 : 0;
+  });
+  return Object.entries(byOpening)
+    .filter(([,v]) => v.total >= 5)
+    .map(([k,v]) => [k, v.total, Math.round(v.score / v.total * 100)])
+    .sort((a,b)=>a[2]-b[2])
+    .slice(0,3);
+}
+
+function setOutputHtml(boxId, txtId, html){
+  const box = document.getElementById(boxId);
+  const txt = document.getElementById(txtId);
+  box.style.display = 'block';
+  box.classList.remove('loading');
+  txt.innerHTML = html;
+}
+
 function addHistoryCard(logTitle, text){
   const histList = document.getElementById('hist-list');
   if (histList.querySelector('.empty-state')) histList.innerHTML = '';
@@ -1271,9 +1359,36 @@ function localPositionInsight(){
 function localOpponentAnalysis(name, elo, style, notes, focus, useLib){
   const stats = analyzeLibrary();
   if (!useLib || !stats.total) {
-    return `Profile\n${name}${elo ? ` (${elo})` : ''}${style ? ` is tagged as ${style}` : ''}. ${notes || 'No custom notes were added.'}\n\nFocus\n${focus || 'General prep'}.\n\nLibrary note\nImport or enable library games to generate opponent-specific tendencies, opening frequencies, and result splits.`;
+    return {
+      text: `Profile\n${name}${elo ? ` (${elo})` : ''}. ${notes || 'No custom notes were added.'}\n\nLibrary note\nImport or enable library games to generate opponent-specific tendencies, opening frequencies, and result splits.`,
+      html: `<div class="rich-section"><div class="rich-title">Profile</div><div class="rich-copy">${escapeHtml(name)}${elo ? ` (${escapeHtml(elo)})` : ''}</div></div><div class="rich-section"><div class="rich-title">Library Note</div><div class="rich-copy">Import or enable library games to generate opponent-specific tendencies, opening frequencies, and result splits.</div></div>`
+    };
   }
-  return `Library-backed profile\n${name}${elo ? ` (${elo})` : ''}${style ? ` · ${style}` : ''}. Relevant sample: ${stats.total} games as ${colorName(opponentColorCode())}. Match score from this slice: ${stats.score}% (${stats.resultCounts.win} wins, ${stats.resultCounts.draw} draws, ${stats.resultCounts.loss} losses).\n\nOpening tendencies\nMost common openings: ${formatCountList(stats.topOpenings, stats.total)}.\nMost common first moves from this side: ${formatCountList(stats.topFirstMoves, stats.total)}.\nMost common replies seen from opponents: ${formatCountList(stats.topReplies, stats.total)}.\n\nPractical prep\nUse ${focus || 'your selected focus areas'} to target the biggest recurring clusters first. Start with the top opening family, prepare one mainline answer to the top first move, and one sideline against the second-most common branch. ${notes ? `Custom notes: ${notes}` : ''}`;
+  const inferredStyle = inferStyleFromLibrary(stats);
+  const softSpots = openingPerformance(stats.games);
+  const html = `
+    <div class="rich-section">
+      <div class="rich-title">Opponent Profile</div>
+      <div class="rich-copy">${escapeHtml(name)}${elo ? ` (${escapeHtml(elo)})` : ''} · inferred style: ${escapeHtml(inferredStyle)}. Sample: ${stats.total} games as ${colorName(opponentColorCode())}. Score from this slice: ${stats.score}%.</div>
+      ${notes ? `<div class="mini-note">Your notes: ${escapeHtml(notes)}</div>` : ''}
+    </div>
+    <div class="rich-section">
+      <div class="rich-title">Most Common Openings</div>
+      <div class="rich-copy">${escapeHtml(formatCountList(stats.topOpenings, stats.total))}</div>
+    </div>
+    <div class="rich-section">
+      <div class="rich-title">Move Tendencies</div>
+      <div class="rich-copy">First moves: ${escapeHtml(formatCountList(stats.topFirstMoves, stats.total))}</div>
+      <div class="rich-copy">Common replies faced: ${escapeHtml(formatCountList(stats.topReplies, stats.total))}</div>
+    </div>
+    <div class="rich-section">
+      <div class="rich-title">Likely Pressure Points</div>
+      <div class="rich-copy">${softSpots.length ? escapeHtml(softSpots.map(([op, total, pct]) => `${op} (${pct}% score over ${total} games)`).join(', ')) : 'No clear opening underperformance cluster yet from the current sample.'}</div>
+      <div class="mini-note">Focus areas selected: ${escapeHtml(focus || 'general prep')}</div>
+    </div>
+  `;
+  const text = `Library-backed profile\n${name}${elo ? ` (${elo})` : ''} · inferred style: ${inferredStyle}. Sample: ${stats.total} games as ${colorName(opponentColorCode())}. Score: ${stats.score}%.\n\nMost common openings: ${formatCountList(stats.topOpenings, stats.total)}.\nMost common first moves: ${formatCountList(stats.topFirstMoves, stats.total)}.\nCommon replies faced: ${formatCountList(stats.topReplies, stats.total)}.\n\nPressure points: ${softSpots.length ? softSpots.map(([op, total, pct]) => `${op} (${pct}% score over ${total} games)`).join(', ') : 'no clear opening weakness cluster yet'}.\n${notes ? `Custom notes: ${notes}` : ''}`;
+  return { text, html };
 }
 
 function localOpeningPrep(color, opening, depth, opp, goals, useLib){
@@ -1287,11 +1402,43 @@ function localOpeningPrep(color, opening, depth, opp, goals, useLib){
     const first = g.moves[opponentColorCode() === 'w' ? 0 : 1];
     if (first) firstMoves[first] = (firstMoves[first] || 0) + 1;
   });
+  const plyDepth = depthToPly(depth);
+  const lineCandidates = collectOpeningPrepLines(subset, plyDepth);
+  openingPrepLines = lineCandidates;
   if (!useLib || !totalRelevant) {
-    return `Repertoire brief\nPrepare ${opening} for ${color}. Target depth: ${depth}.\n\nMove-order focus\n${opp ? `Expected opponent replies: ${opp}.` : 'No opponent-specific library slice is active, so this stays generic.'}\n\nTraining emphasis\nPrioritize ${goals || 'main line theory'}.`;
+    return {
+      text: `Repertoire brief\nPrepare ${opening || 'chosen opening'} for ${color}. Target depth: ${depth}.\n\nMove-order focus\n${opp ? `Expected opponent replies: ${opp}.` : 'No opponent-specific library slice is active, so this stays generic.'}\n\nTraining emphasis\nPrioritize ${goals || 'main line theory'}.`,
+      html: `<div class="rich-section"><div class="rich-title">Repertoire Brief</div><div class="rich-copy">Prepare ${escapeHtml(opening || 'chosen opening')} for ${escapeHtml(color)}. Target depth: ${escapeHtml(depth)}.</div></div><div class="rich-section"><div class="rich-title">Move-Order Focus</div><div class="rich-copy">${escapeHtml(opp || 'No opponent-specific library slice is active, so this stays generic.')}</div></div>`
+    };
   }
   const coveragePct = opening ? Math.round((subset.length / totalRelevant) * 100) : 100;
-  return `Opening prep for ${opening || 'the current matchup'}\nRelevant library slice: ${subset.length} games${opening ? ` (${coveragePct}% of the opponent-color corpus)` : ''}. Depth target: ${depth}.\n\nObserved opening cluster\nTop matching openings: ${formatCountList(sortCounts(openingCounts, 4), Math.max(subset.length, 1))}.\nOpponent first moves in this slice: ${formatCountList(sortCounts(firstMoves, 4), Math.max(subset.length, 1))}.\n\nPrep recommendation\n${opp ? `Cross-check your expected replies against the library note: ${opp}.` : 'Build your prep around the highest-frequency move orders first.'} Prioritize ${goals || 'main line theory'}, then add one sideline against the most common practical deviation.`;
+  const lineHtml = lineCandidates.map((line, i) => `
+    <div class="line-card">
+      <div class="rich-title">Candidate Line ${i + 1}</div>
+      <div class="line-seq">${escapeHtml(line.rawMoves.join(' '))}</div>
+      <div class="mini-note">${escapeHtml(line.opening)} · ${line.count} game(s) in sample</div>
+      <div style="margin-top:0.6rem"><button class="btn btn-sm" onclick="loadOpeningPrepLine(${i})">Load On Board</button></div>
+    </div>
+  `).join('');
+  const html = `
+    <div class="rich-section">
+      <div class="rich-title">Opening Prep</div>
+      <div class="rich-copy">${escapeHtml(opening || 'Current matchup')} · ${subset.length} relevant games${opening ? ` (${coveragePct}% of opponent-color corpus)` : ''} · target depth ${escapeHtml(depth)}.</div>
+    </div>
+    <div class="rich-section">
+      <div class="rich-title">Observed Cluster</div>
+      <div class="rich-copy">Top matching openings: ${escapeHtml(formatCountList(sortCounts(openingCounts, 4), Math.max(subset.length, 1)))}</div>
+      <div class="rich-copy">Opponent first moves: ${escapeHtml(formatCountList(sortCounts(firstMoves, 4), Math.max(subset.length, 1)))}</div>
+      ${opp ? `<div class="mini-note">Your expected replies: ${escapeHtml(opp)}</div>` : ''}
+      <div class="mini-note">Prep goals: ${escapeHtml(goals || 'main line theory')}</div>
+    </div>
+    <div class="rich-section">
+      <div class="rich-title">Board Lines</div>
+      ${lineHtml || '<div class="rich-copy">No line candidates found for this opening query.</div>'}
+    </div>
+  `;
+  const text = `Opening prep for ${opening || 'the current matchup'}\nRelevant library slice: ${subset.length} games${opening ? ` (${coveragePct}% of the opponent-color corpus)` : ''}. Depth target: ${depth}.\n\nTop matching openings: ${formatCountList(sortCounts(openingCounts, 4), Math.max(subset.length, 1))}.\nOpponent first moves: ${formatCountList(sortCounts(firstMoves, 4), Math.max(subset.length, 1))}.\n\nCandidate lines:\n${lineCandidates.map((line, i) => `${i + 1}. ${line.rawMoves.join(' ')}`).join('\n') || 'No line candidates found.'}`;
+  return { text, html };
 }
 
 function localGamePlan(style, format, stakes, ctx, comp, useLib){
@@ -1331,7 +1478,6 @@ async function analyzeOpponent(useLib){
   if (useLib && !gameLibrary.length) { alert('Import games to the library first.'); return; }
   const name = document.getElementById('opp-name').value || 'opponent';
   const elo = document.getElementById('opp-elo').value;
-  const style = document.getElementById('opp-style').value;
   const notes = document.getElementById('opp-notes').value;
   const focus = getChips('opp-focus');
   const box = document.getElementById('opp-out');
@@ -1341,9 +1487,9 @@ async function analyzeOpponent(useLib){
   txt.innerHTML = '<div class="thinking"><span class="dot"></span><span class="dot"></span><span class="dot"></span>&nbsp;Analysing…</div>';
   await sleep(320);
   box.classList.remove('loading');
-  const text = localOpponentAnalysis(name, elo, style, notes, focus, useLib);
-  txt.textContent = text;
-  addHistoryCard(`Analysis: ${name}`, text);
+  const result = localOpponentAnalysis(name, elo, '', notes, focus, useLib);
+  txt.innerHTML = result.html;
+  addHistoryCard(`Analysis: ${name}`, result.text);
 }
 
 async function prepOpening(useLib){
@@ -1360,9 +1506,9 @@ async function prepOpening(useLib){
   txt.innerHTML = '<div class="thinking"><span class="dot"></span><span class="dot"></span><span class="dot"></span>&nbsp;Analysing…</div>';
   await sleep(320);
   box.classList.remove('loading');
-  const text = localOpeningPrep(color, opening, depth, opp, goals, useLib);
-  txt.textContent = text;
-  addHistoryCard(`Opening: ${opening}`, text);
+  const result = localOpeningPrep(color, opening, depth, opp, goals, useLib);
+  txt.innerHTML = result.html;
+  addHistoryCard(`Opening: ${opening}`, result.text);
 }
 
 async function generatePlan(useLib){
