@@ -1191,6 +1191,63 @@ function currentMoveFrequencies(){
   return Object.entries(counts).sort((a,b)=>b[1]-a[1]).slice(0,3);
 }
 
+function sortCounts(obj, limit=5){
+  return Object.entries(obj).sort((a,b)=>b[1]-a[1]).slice(0, limit);
+}
+
+function opponentPerspectiveResult(game){
+  if (game.result === '1/2-1/2' || game.result === '*') return 'draw';
+  if (game.opponentColor === 'w') return game.result === '1-0' ? 'win' : 'loss';
+  if (game.opponentColor === 'b') return game.result === '0-1' ? 'win' : 'loss';
+  return game.rc || 'draw';
+}
+
+function analyzeLibrary(){
+  const games = relevantGames();
+  const resultCounts = {win:0, loss:0, draw:0};
+  const openingCounts = {};
+  const firstMoveCounts = {};
+  const replyCounts = {};
+  const popularLines = {};
+  const opponentPlyIndex = opponentColorCode() === 'w' ? 0 : 1;
+  const replyPlyIndex = opponentColorCode() === 'w' ? 1 : 2;
+  games.forEach(g => {
+    resultCounts[opponentPerspectiveResult(g)] = (resultCounts[opponentPerspectiveResult(g)] || 0) + 1;
+    const opening = g.opening || g.eco || 'Unlabelled';
+    openingCounts[opening] = (openingCounts[opening] || 0) + 1;
+    const first = g.moves[opponentPlyIndex];
+    if (first) firstMoveCounts[first] = (firstMoveCounts[first] || 0) + 1;
+    const reply = g.moves[replyPlyIndex];
+    if (reply) replyCounts[reply] = (replyCounts[reply] || 0) + 1;
+    const line = g.moves.slice(0, Math.min(6, g.moves.length)).join(' ');
+    if (line) popularLines[line] = (popularLines[line] || 0) + 1;
+  });
+  const total = games.length;
+  const score = total ? Math.round(((resultCounts.win || 0) + 0.5 * (resultCounts.draw || 0)) / total * 100) : 0;
+  return {
+    total,
+    resultCounts,
+    score,
+    topOpenings: sortCounts(openingCounts, 5),
+    topFirstMoves: sortCounts(firstMoveCounts, 5),
+    topReplies: sortCounts(replyCounts, 5),
+    topLines: sortCounts(popularLines, 5),
+    games
+  };
+}
+
+function formatCountList(entries, total){
+  if (!entries.length) return 'none yet';
+  return entries.map(([name, count]) => `${name} (${count}, ${Math.round(count / total * 100)}%)`).join(', ');
+}
+
+function filterGamesByOpeningQuery(query){
+  const q = (query || '').trim().toLowerCase();
+  const games = relevantGames();
+  if (!q) return games;
+  return games.filter(g => `${g.opening || ''} ${g.eco || ''}`.toLowerCase().includes(q));
+}
+
 function addHistoryCard(logTitle, text){
   const histList = document.getElementById('hist-list');
   if (histList.querySelector('.empty-state')) histList.innerHTML = '';
@@ -1212,19 +1269,41 @@ function localPositionInsight(){
 }
 
 function localOpponentAnalysis(name, elo, style, notes, focus, useLib){
-  const summary = libSummary();
-  const libText = useLib && summary.tot ? `Library-backed tendencies\nThe loaded games score ${summary.score}% by match-score and cluster most heavily around ${summary.top}.\n\n` : '';
-  return `Profile\n${name}${elo ? ` (${elo})` : ''}${style ? ` looks most like a ${style} player` : ' has no style selected yet'}. ${notes || 'No custom notes were added.'}\n\n${libText}What to probe\nFocus on ${focus || 'general opening and middlegame choices'}. Test whether the opponent repeats familiar structures early or can be pulled into less comfortable move orders.\n\nPractical plan\nForce an early decision, keep one sideline ready, and steer toward positions where preparation matters more than general feel. Note recurring openings, common pawn structures, and whether results swing with sharper positions or slower maneuvering games.`;
+  const stats = analyzeLibrary();
+  if (!useLib || !stats.total) {
+    return `Profile\n${name}${elo ? ` (${elo})` : ''}${style ? ` is tagged as ${style}` : ''}. ${notes || 'No custom notes were added.'}\n\nFocus\n${focus || 'General prep'}.\n\nLibrary note\nImport or enable library games to generate opponent-specific tendencies, opening frequencies, and result splits.`;
+  }
+  return `Library-backed profile\n${name}${elo ? ` (${elo})` : ''}${style ? ` · ${style}` : ''}. Relevant sample: ${stats.total} games as ${colorName(opponentColorCode())}. Match score from this slice: ${stats.score}% (${stats.resultCounts.win} wins, ${stats.resultCounts.draw} draws, ${stats.resultCounts.loss} losses).\n\nOpening tendencies\nMost common openings: ${formatCountList(stats.topOpenings, stats.total)}.\nMost common first moves from this side: ${formatCountList(stats.topFirstMoves, stats.total)}.\nMost common replies seen from opponents: ${formatCountList(stats.topReplies, stats.total)}.\n\nPractical prep\nUse ${focus || 'your selected focus areas'} to target the biggest recurring clusters first. Start with the top opening family, prepare one mainline answer to the top first move, and one sideline against the second-most common branch. ${notes ? `Custom notes: ${notes}` : ''}`;
 }
 
 function localOpeningPrep(color, opening, depth, opp, goals, useLib){
-  const summary = libSummary();
-  return `Repertoire brief\nPrepare ${opening} for ${color}. Target depth: ${depth}.\n\nMove-order focus\nStart from your most forcing tabiya and build one clean main line, one practical sideline, and one anti-surprise fallback. ${opp ? `Expected opponent replies: ${opp}.` : 'No specific opponent reply set was entered.'}\n\nTraining emphasis\nPrioritize ${goals || 'main line theory'}.\n\nLibrary overlay\n${useLib && summary.tot ? `The current library leans toward ${summary.top}, so compare your opening choice against those recurring structures.` : 'Add library games if you want this section to reflect a specific opponent corpus.'}`;
+  const subset = filterGamesByOpeningQuery(opening);
+  const totalRelevant = relevantGames().length;
+  const openingCounts = {};
+  const firstMoves = {};
+  subset.forEach(g => {
+    const key = g.opening || g.eco || 'Unlabelled';
+    openingCounts[key] = (openingCounts[key] || 0) + 1;
+    const first = g.moves[opponentColorCode() === 'w' ? 0 : 1];
+    if (first) firstMoves[first] = (firstMoves[first] || 0) + 1;
+  });
+  if (!useLib || !totalRelevant) {
+    return `Repertoire brief\nPrepare ${opening} for ${color}. Target depth: ${depth}.\n\nMove-order focus\n${opp ? `Expected opponent replies: ${opp}.` : 'No opponent-specific library slice is active, so this stays generic.'}\n\nTraining emphasis\nPrioritize ${goals || 'main line theory'}.`;
+  }
+  const coveragePct = opening ? Math.round((subset.length / totalRelevant) * 100) : 100;
+  return `Opening prep for ${opening || 'the current matchup'}\nRelevant library slice: ${subset.length} games${opening ? ` (${coveragePct}% of the opponent-color corpus)` : ''}. Depth target: ${depth}.\n\nObserved opening cluster\nTop matching openings: ${formatCountList(sortCounts(openingCounts, 4), Math.max(subset.length, 1))}.\nOpponent first moves in this slice: ${formatCountList(sortCounts(firstMoves, 4), Math.max(subset.length, 1))}.\n\nPrep recommendation\n${opp ? `Cross-check your expected replies against the library note: ${opp}.` : 'Build your prep around the highest-frequency move orders first.'} Prioritize ${goals || 'main line theory'}, then add one sideline against the most common practical deviation.`;
 }
 
 function localGamePlan(style, format, stakes, ctx, comp, useLib){
-  const summary = libSummary();
-  return `Match blueprint\nStyle: ${style}. Format: ${format}. Stakes: ${stakes}.\n\nPrimary objective\nReach a middlegame where your decisions are faster and clearer than your opponent's. ${ctx || 'No extra context was supplied.'}\n\nChecklist\nCenter the plan on ${comp || 'opening choices and middlegame strategy'}. Define one low-risk line, one ambitious line, and one emergency simplification route.\n\nOpponent-specific overlay\n${useLib && summary.tot ? `The loaded library suggests repeated exposure to ${summary.top}. Use that to choose structures they see often only if you believe you understand them better; otherwise, angle slightly away from the biggest cluster.` : 'Load library games to tailor the blueprint around actual opponent history.'}`;
+  const stats = analyzeLibrary();
+  if (!useLib || !stats.total) {
+    return `Match blueprint\nStyle: ${style}. Format: ${format}. Stakes: ${stakes}.\n\nPrimary objective\nReach structures you understand better than your opponent. ${ctx || 'No extra context was supplied.'}\n\nChecklist\nCenter the plan on ${comp || 'opening choices and middlegame strategy'}.`;
+  }
+  const topOpening = stats.topOpenings[0]?.[0] || 'the opponent’s main opening family';
+  const topMove = stats.topFirstMoves[0]?.[0] || 'their main first move';
+  const altMove = stats.topFirstMoves[1]?.[0];
+  const lineText = stats.topLines.length ? stats.topLines.slice(0,3).map(([line,count]) => `${line} (${count})`).join(', ') : 'none';
+  return `Game plan\nStyle: ${style}. Format: ${format}. Stakes: ${stakes}. Opponent sample: ${stats.total} games as ${colorName(opponentColorCode())}.\n\nWhat the games say\nThe biggest recurring opening family is ${topOpening}. The most common first move is ${topMove}${altMove ? `, with ${altMove} as the secondary branch` : ''}. Frequent early lines: ${lineText}.\n\nRecommended plan\nBuild your first prep file around ${topOpening} and your first-board response to ${topMove}. Keep one backup branch ready for the second-most common first move. ${ctx || 'No extra context was supplied.'}\n\nExecution checklist\nAnchor the match strategy around ${comp || 'opening choices, middlegame strategy, and endgame approach'}. Choose one stable line, one sharper practical line, and one simplification route you can trust if the game leaves prep early.`;
 }
 
 function localGameReview(g){
