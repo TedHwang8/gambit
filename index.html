@@ -138,6 +138,16 @@ textarea { resize:vertical; min-height:80px; }
 .line-card { border:1px solid var(--border); background:var(--cream); padding:0.8rem 0.9rem; margin-top:0.6rem; }
 .line-seq { font-family:'JetBrains Mono',monospace; font-size:0.68rem; line-height:1.7; white-space:pre-wrap; }
 .mini-note { font-family:'JetBrains Mono',monospace; font-size:0.58rem; color:var(--muted); margin-top:0.35rem; }
+.prep-grid { display:grid; grid-template-columns:360px 1fr; gap:1.2rem; margin-top:1rem; align-items:start; }
+.prep-pane { background:white; border:1px solid var(--border); padding:1rem; }
+.tree-list { display:flex; flex-direction:column; gap:0.45rem; }
+.tree-node { display:flex; justify-content:space-between; gap:0.8rem; align-items:center; border:1px solid var(--border); background:var(--cream); padding:0.55rem 0.7rem; cursor:pointer; }
+.tree-node:hover { border-color:var(--gold); }
+.tree-move { font-family:'JetBrains Mono',monospace; font-size:0.68rem; color:var(--ink); }
+.tree-meta { font-family:'JetBrains Mono',monospace; font-size:0.56rem; color:var(--muted); white-space:nowrap; }
+.crumbs { font-family:'JetBrains Mono',monospace; font-size:0.64rem; line-height:1.7; background:var(--cream); border:1px solid var(--border); padding:0.7rem; margin-bottom:0.8rem; white-space:pre-wrap; }
+.anti-card { border:1px solid var(--border); padding:0.75rem 0.85rem; margin-top:0.6rem; background:var(--cream); }
+@media(max-width:900px){ .prep-grid{grid-template-columns:1fr;} }
 @media(max-width:660px){
   .gl-hdr,.gl-row { grid-template-columns:2fr 0.7fr 0.7fr 60px; }
   .gl-hdr>*:nth-child(2),.gl-hdr>*:nth-child(5),
@@ -341,6 +351,38 @@ textarea { resize:vertical; min-height:80px; }
     <button class="btn" onclick="prepOpening(false)">Generate Opening Prep</button>
     <button class="btn btn-ghost" onclick="prepOpening(true)">+ Use Library Games</button>
   </div>
+  <div class="prep-grid">
+    <div class="prep-pane">
+      <div class="sec-title">Prep Board</div>
+      <div class="board-wrap">
+        <div class="board-coords-wrap">
+          <div class="coord-rank" id="op-coord-rank"></div>
+          <div>
+            <div class="chess-board" id="op-board"></div>
+            <div class="coord-file" id="op-coord-file"></div>
+          </div>
+        </div>
+        <div class="board-controls">
+          <button class="btn btn-ghost btn-sm" onclick="resetOpeningPrepBoard()">Reset</button>
+          <button class="btn btn-ghost btn-sm" onclick="stepOpeningPrep(-1)">← Back</button>
+          <button class="btn btn-ghost btn-sm" onclick="stepOpeningPrep(1)">Next →</button>
+          <button class="btn btn-ghost btn-sm" onclick="flipOpeningPrepBoard()">Flip</button>
+        </div>
+        <div style="width:100%">
+          <div class="output-label" style="margin-bottom:0.35rem;">Loaded line</div>
+          <div class="move-seq-box" id="op-move-list">—</div>
+        </div>
+        <div class="turn-ind" id="op-turn-ind">Opening prep board</div>
+      </div>
+    </div>
+    <div class="prep-pane">
+      <div class="sec-title">Clickable Opening Tree</div>
+      <div class="crumbs" id="op-tree-crumbs">No tree loaded yet.</div>
+      <div class="tree-list" id="op-tree"></div>
+      <div class="sec-title" style="margin-top:1rem;">Best Anti-Benjamin Lines</div>
+      <div id="op-anti"><div class="prob-empty">Generate opening prep with library games to see anti-Benjamin lines from his losses.</div></div>
+    </div>
+  </div>
   <div class="output-box" id="op-out" style="display:none"><div class="output-label">Opening Preparation</div><div class="output-text" id="op-txt"></div></div>
 </div>
 
@@ -472,6 +514,12 @@ let gameLibrary = [];
 let activeModalGame = null;
 let prep = { opponentName:'Joel Benjamin', myColor:'w' };
 let openingPrepLines = [];
+let openingTreeData = [];
+let openingTreePrefix = [];
+let antiBenjaminLines = [];
+let openingPrepFlipped = false;
+let OPGS = createInitialState();
+let openingPrepCursor = 0;
 let GS = { board:[], turn:'w', castling:{wK:1,wQ:1,bK:1,bQ:1}, ep:null, history:[], selSq:null, validMoves:[] };
 
 function fenToBoard(fen){
@@ -891,6 +939,7 @@ function updatePrepProfile(shouldResetBoard=false){
   prep.opponentName = document.getElementById('prep-opp-name').value.trim() || 'Opponent';
   prep.myColor = document.getElementById('prep-my-color').value || 'w';
   boardFlipped = prep.myColor === 'b';
+  openingPrepFlipped = prep.myColor === 'b';
   document.getElementById('prep-opp-color').value = colorName(opponentColorCode());
   document.getElementById('pi-opp').textContent = `${currentOpponentName()} · ${colorName(opponentColorCode())}`;
   document.getElementById('opp-name').value = currentOpponentName();
@@ -905,6 +954,7 @@ function updatePrepProfile(shouldResetBoard=false){
   refreshLibraryUI();
   updateProb();
   renderBoard();
+  renderOpeningPrepBoard();
 }
 
 function syncOpponentLabel(value){
@@ -1285,10 +1335,78 @@ function loadRawSequenceToBoard(tokens){
   renderBoard();
 }
 
+function syncOpeningPrepStatus(){
+  document.getElementById('op-move-list').textContent = OPGS.history.length
+    ? OPGS.history.map((h,i)=>`${i % 2 === 0 ? `${Math.floor(i/2)+1}. ` : ''}${h.note}`).join(' ')
+    : '—';
+  const myColor = prep.myColor;
+  if (!OPGS.history.length && myColor === 'b') {
+    document.getElementById('op-turn-ind').textContent = `Prep board · You are Black · ${currentOpponentName()} (White) moves first`;
+  } else if (!OPGS.history.length) {
+    document.getElementById('op-turn-ind').textContent = 'Prep board · You are White';
+  } else {
+    document.getElementById('op-turn-ind').textContent = `Prep board · ${colorName(OPGS.turn)} to move`;
+  }
+}
+
+function renderOpeningPrepBoard(){
+  const container = document.getElementById('op-board');
+  if (!container) return;
+  container.innerHTML = '';
+  const order = openingPrepFlipped ? Array.from({length:64},(_,i)=>63-i) : Array.from({length:64},(_,i)=>i);
+  for (const i of order) {
+    const light = (R(i) + C(i)) % 2 === 0;
+    const sq = document.createElement('div');
+    sq.className = 'sq ' + (light ? 'light' : 'dark');
+    if (OPGS.board[i]) sq.textContent = GLYPHS[OPGS.board[i]];
+    container.appendChild(sq);
+  }
+  const files = openingPrepFlipped ? 'hgfedcba' : 'abcdefgh';
+  const ranks = openingPrepFlipped ? '12345678' : '87654321';
+  document.getElementById('op-coord-file').innerHTML = files.split('').map(f=>`<span style="flex:1;text-align:center">${f}</span>`).join('');
+  const sqH = document.querySelector('#op-board .sq')?.offsetHeight || 62;
+  document.getElementById('op-coord-rank').innerHTML = ranks.split('').map(r=>`<span style="height:${sqH}px">${r}</span>`).join('');
+  syncOpeningPrepStatus();
+}
+
+function loadOpeningPrepMoves(tokens, cursor){
+  const raw = tokens || [];
+  const state = createInitialState();
+  const upto = cursor == null ? raw.length : Math.max(0, Math.min(cursor, raw.length));
+  for (let i = 0; i < upto; i++) {
+    const mv = sanToMove(state, raw[i]);
+    if (!mv) break;
+    applyMoveToState(state, mv.from, mv.to, mv.promotion);
+  }
+  OPGS = state;
+  openingPrepCursor = upto;
+  renderOpeningPrepBoard();
+}
+
+function resetOpeningPrepBoard(){
+  openingPrepCursor = 0;
+  OPGS = createInitialState();
+  openingPrepFlipped = prep.myColor === 'b';
+  renderOpeningPrepBoard();
+}
+
+function flipOpeningPrepBoard(){
+  openingPrepFlipped = !openingPrepFlipped;
+  renderOpeningPrepBoard();
+}
+
+function stepOpeningPrep(delta){
+  const source = openingTreePrefix.length ? openingTreePrefix : (openingPrepLines[0]?.rawMoves || []);
+  if (!source.length) return;
+  loadOpeningPrepMoves(source, openingPrepCursor + delta);
+}
+
 function loadOpeningPrepLine(i){
   const item = openingPrepLines[i];
   if (!item) return;
-  loadRawSequenceToBoard(item.rawMoves);
+  openingTreePrefix = [...item.rawMoves];
+  loadOpeningPrepMoves(item.rawMoves, item.rawMoves.length);
+  renderOpeningTree();
 }
 
 function inferStyleFromLibrary(stats){
@@ -1326,6 +1444,88 @@ function openingPerformance(subset){
     .map(([k,v]) => [k, v.total, Math.round(v.score / v.total * 100)])
     .sort((a,b)=>a[2]-b[2])
     .slice(0,3);
+}
+
+function prefixMatches(rawMoves, prefix){
+  if (prefix.length > rawMoves.length) return false;
+  for (let i = 0; i < prefix.length; i++) if (rawMoves[i] !== prefix[i]) return false;
+  return true;
+}
+
+function buildOpeningTree(games, maxPly){
+  return games
+    .map(g => ({ rawMoves: (g.rawMoves || []).slice(0, maxPly), opening:g.opening || g.eco || 'Unlabelled', result: opponentPerspectiveResult(g) }))
+    .filter(g => g.rawMoves.length);
+}
+
+function renderOpeningTree(){
+  const crumbs = document.getElementById('op-tree-crumbs');
+  const tree = document.getElementById('op-tree');
+  if (!openingTreeData.length) {
+    crumbs.textContent = 'No tree loaded yet.';
+    tree.innerHTML = '<div class="prob-empty">Generate opening prep with library games to build a clickable tree.</div>';
+    return;
+  }
+  const matching = openingTreeData.filter(item => prefixMatches(item.rawMoves, openingTreePrefix));
+  crumbs.textContent = openingTreePrefix.length ? `Current path\n${openingTreePrefix.join(' ')}\n\nMatching games: ${matching.length}` : `Current path\n(starting position)\n\nMatching games: ${matching.length}`;
+  const nextCounts = {};
+  matching.forEach(item => {
+    const mv = item.rawMoves[openingTreePrefix.length];
+    if (!mv) return;
+    nextCounts[mv] = (nextCounts[mv] || 0) + 1;
+  });
+  const entries = Object.entries(nextCounts).sort((a,b)=>b[1]-a[1]).slice(0,12);
+  tree.innerHTML = `
+    <div style="display:flex;gap:0.5rem;flex-wrap:wrap;margin-bottom:0.7rem;">
+      <button class="btn btn-ghost btn-sm" onclick="openingTreePrefix=[]; renderOpeningTree(); loadOpeningPrepMoves([], 0);">Root</button>
+      <button class="btn btn-ghost btn-sm" onclick="openingTreePrefix=openingTreePrefix.slice(0,-1); renderOpeningTree(); loadOpeningPrepMoves(openingTreePrefix, openingTreePrefix.length);">Back One</button>
+      <button class="btn btn-ghost btn-sm" onclick="loadOpeningPrepMoves(openingTreePrefix, openingTreePrefix.length);">Load Prefix</button>
+    </div>
+    ${entries.map(([mv,count]) => `<div class="tree-node" onclick="selectOpeningTreeMove('${escapeHtml(mv)}')"><span class="tree-move">${escapeHtml(mv)}</span><span class="tree-meta">${count} games · ${Math.round(count / matching.length * 100)}%</span></div>`).join('') || '<div class="prob-empty">No further branches from this node.</div>'}
+  `;
+}
+
+function selectOpeningTreeMove(move){
+  openingTreePrefix = [...openingTreePrefix, move];
+  loadOpeningPrepMoves(openingTreePrefix, openingTreePrefix.length);
+  renderOpeningTree();
+}
+
+function buildAntiBenjaminLines(subset, plyDepth){
+  const lostGames = subset.filter(g => opponentPerspectiveResult(g) === 'loss');
+  const grouped = {};
+  lostGames.forEach(g => {
+    const raw = (g.rawMoves || []).slice(0, plyDepth);
+    if (!raw.length) return;
+    const key = raw.join(' ');
+    if (!grouped[key]) grouped[key] = { count:0, rawMoves:raw, opening:g.opening || g.eco || 'Unlabelled' };
+    grouped[key].count += 1;
+  });
+  return Object.values(grouped).sort((a,b)=>b.count-a.count).slice(0,5);
+}
+
+function loadAntiBenjaminLine(i){
+  const item = antiBenjaminLines[i];
+  if (!item) return;
+  openingTreePrefix = [...item.rawMoves];
+  loadOpeningPrepMoves(item.rawMoves, item.rawMoves.length);
+  renderOpeningTree();
+}
+
+function renderAntiBenjaminLines(lines){
+  const el = document.getElementById('op-anti');
+  if (!lines.length) {
+    el.innerHTML = '<div class="prob-empty">No clear anti-Benjamin lines found in the current filtered loss sample.</div>';
+    return;
+  }
+  el.innerHTML = lines.map((line, i) => `
+    <div class="anti-card">
+      <div class="rich-title">Anti-Line ${i + 1}</div>
+      <div class="line-seq">${escapeHtml(line.rawMoves.join(' '))}</div>
+      <div class="mini-note">${escapeHtml(line.opening)} · appeared in ${line.count} Benjamin loss${line.count !== 1 ? 'es' : ''}</div>
+      <div style="margin-top:0.6rem"><button class="btn btn-sm" onclick="loadAntiBenjaminLine(${i})">Load Anti-Line</button></div>
+    </div>
+  `).join('');
 }
 
 function setOutputHtml(boxId, txtId, html){
@@ -1366,6 +1566,7 @@ function localOpponentAnalysis(name, elo, style, notes, focus, useLib){
   }
   const inferredStyle = inferStyleFromLibrary(stats);
   const softSpots = openingPerformance(stats.games);
+  const lostLines = buildAntiBenjaminLines(stats.games, 18).slice(0,3);
   const html = `
     <div class="rich-section">
       <div class="rich-title">Opponent Profile</div>
@@ -1386,8 +1587,12 @@ function localOpponentAnalysis(name, elo, style, notes, focus, useLib){
       <div class="rich-copy">${softSpots.length ? escapeHtml(softSpots.map(([op, total, pct]) => `${op} (${pct}% score over ${total} games)`).join(', ')) : 'No clear opening underperformance cluster yet from the current sample.'}</div>
       <div class="mini-note">Focus areas selected: ${escapeHtml(focus || 'general prep')}</div>
     </div>
+    <div class="rich-section">
+      <div class="rich-title">Loss-Derived Anti-Lines</div>
+      <div class="rich-copy">${lostLines.length ? escapeHtml(lostLines.map(line => `${line.rawMoves.join(' ')} (${line.count})`).join(' | ')) : 'No stable anti-line cluster yet.'}</div>
+    </div>
   `;
-  const text = `Library-backed profile\n${name}${elo ? ` (${elo})` : ''} · inferred style: ${inferredStyle}. Sample: ${stats.total} games as ${colorName(opponentColorCode())}. Score: ${stats.score}%.\n\nMost common openings: ${formatCountList(stats.topOpenings, stats.total)}.\nMost common first moves: ${formatCountList(stats.topFirstMoves, stats.total)}.\nCommon replies faced: ${formatCountList(stats.topReplies, stats.total)}.\n\nPressure points: ${softSpots.length ? softSpots.map(([op, total, pct]) => `${op} (${pct}% score over ${total} games)`).join(', ') : 'no clear opening weakness cluster yet'}.\n${notes ? `Custom notes: ${notes}` : ''}`;
+  const text = `Library-backed profile\n${name}${elo ? ` (${elo})` : ''} · inferred style: ${inferredStyle}. Sample: ${stats.total} games as ${colorName(opponentColorCode())}. Score: ${stats.score}%.\n\nMost common openings: ${formatCountList(stats.topOpenings, stats.total)}.\nMost common first moves: ${formatCountList(stats.topFirstMoves, stats.total)}.\nCommon replies faced: ${formatCountList(stats.topReplies, stats.total)}.\n\nPressure points: ${softSpots.length ? softSpots.map(([op, total, pct]) => `${op} (${pct}% score over ${total} games)`).join(', ') : 'no clear opening weakness cluster yet'}.\nLoss-derived anti-lines: ${lostLines.length ? lostLines.map(line => `${line.rawMoves.join(' ')} (${line.count})`).join(' | ') : 'none yet'}.\n${notes ? `Custom notes: ${notes}` : ''}`;
   return { text, html };
 }
 
@@ -1404,8 +1609,18 @@ function localOpeningPrep(color, opening, depth, opp, goals, useLib){
   });
   const plyDepth = depthToPly(depth);
   const lineCandidates = collectOpeningPrepLines(subset, plyDepth);
+  openingTreeData = buildOpeningTree(subset, plyDepth);
+  openingTreePrefix = [];
   openingPrepLines = lineCandidates;
+  antiBenjaminLines = buildAntiBenjaminLines(relevantGames(), plyDepth);
   if (!useLib || !totalRelevant) {
+    openingTreeData = [];
+    openingTreePrefix = [];
+    openingPrepLines = [];
+    antiBenjaminLines = [];
+    resetOpeningPrepBoard();
+    renderOpeningTree();
+    renderAntiBenjaminLines([]);
     return {
       text: `Repertoire brief\nPrepare ${opening || 'chosen opening'} for ${color}. Target depth: ${depth}.\n\nMove-order focus\n${opp ? `Expected opponent replies: ${opp}.` : 'No opponent-specific library slice is active, so this stays generic.'}\n\nTraining emphasis\nPrioritize ${goals || 'main line theory'}.`,
       html: `<div class="rich-section"><div class="rich-title">Repertoire Brief</div><div class="rich-copy">Prepare ${escapeHtml(opening || 'chosen opening')} for ${escapeHtml(color)}. Target depth: ${escapeHtml(depth)}.</div></div><div class="rich-section"><div class="rich-title">Move-Order Focus</div><div class="rich-copy">${escapeHtml(opp || 'No opponent-specific library slice is active, so this stays generic.')}</div></div>`
@@ -1438,6 +1653,9 @@ function localOpeningPrep(color, opening, depth, opp, goals, useLib){
     </div>
   `;
   const text = `Opening prep for ${opening || 'the current matchup'}\nRelevant library slice: ${subset.length} games${opening ? ` (${coveragePct}% of the opponent-color corpus)` : ''}. Depth target: ${depth}.\n\nTop matching openings: ${formatCountList(sortCounts(openingCounts, 4), Math.max(subset.length, 1))}.\nOpponent first moves: ${formatCountList(sortCounts(firstMoves, 4), Math.max(subset.length, 1))}.\n\nCandidate lines:\n${lineCandidates.map((line, i) => `${i + 1}. ${line.rawMoves.join(' ')}`).join('\n') || 'No line candidates found.'}`;
+  if (lineCandidates[0]) loadOpeningPrepLine(0); else resetOpeningPrepBoard();
+  renderOpeningTree();
+  renderAntiBenjaminLines(antiBenjaminLines);
   return { text, html };
 }
 
@@ -1557,6 +1775,9 @@ document.getElementById('pgn-player').value = currentOpponentName();
 document.getElementById('file-player').value = currentOpponentName();
 updatePrepProfile();
 resetBoard();
+resetOpeningPrepBoard();
+renderOpeningTree();
+renderAntiBenjaminLines([]);
 refreshLibraryUI();
 
 document.getElementById('chess-board').addEventListener('click', (ev) => {
