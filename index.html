@@ -67,7 +67,7 @@ textarea { resize:vertical; min-height:80px; }
 .coord-file { display:flex; justify-content:space-around; margin-top:3px; }
 .coord-file span { flex:1; }
 .chess-board { display:grid; grid-template-columns:repeat(8,1fr); border:2px solid #555; user-select:none; }
-.sq { width:62px; height:62px; display:flex; align-items:center; justify-content:center; cursor:pointer; position:relative; transition:background 0.1s; font-size:2.1rem; line-height:1; }
+.sq { width:62px; height:62px; display:flex; align-items:center; justify-content:center; cursor:pointer; position:relative; transition:background 0.1s; font-size:2.1rem; line-height:1; touch-action:manipulation; }
 @media(max-width:520px){ .sq{width:42px;height:42px;font-size:1.5rem;} }
 .sq.light{background:var(--white-sq)} .sq.dark{background:var(--black-sq)}
 .sq.sel{background:rgba(201,168,76,0.55) !important;}
@@ -640,8 +640,13 @@ function renderBoard(){
       if (last.from === i) sq.classList.add('lf');
       if (last.to === i) sq.classList.add('lt');
     }
+    sq.dataset.index = String(i);
     if (GS.board[i]) sq.textContent = GLYPHS[GS.board[i]];
-    sq.addEventListener('click',()=>handleClick(i));
+    sq.onclick = () => handleClick(i);
+    sq.onpointerdown = (ev) => {
+      ev.preventDefault();
+      handleClick(i);
+    };
     container.appendChild(sq);
   }
   const files = boardFlipped ? 'hgfedcba' : 'abcdefgh';
@@ -1117,6 +1122,13 @@ function getChips(id){ return [...document.querySelectorAll(`#${id} .chip.select
 loadLibrary();
 resetBoard();
 refreshLibraryUI();
+
+document.getElementById('chess-board').addEventListener('click', (ev) => {
+  const sq = ev.target.closest('.sq');
+  if (!sq) return;
+  const i = Number(sq.dataset.index);
+  if (!Number.isNaN(i)) handleClick(i);
+});
 </script>
 </body>
 </html>
