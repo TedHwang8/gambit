@@ -621,6 +621,7 @@ function undoMove(){
 function resetBoard(){
   GS.board = fenToBoard('rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1');
   GS.turn = 'w';
+  boardFlipped = prep.myColor === 'b';
   GS.castling = {wK:1,wQ:1,bK:1,bQ:1};
   GS.ep = null;
   GS.history = [];
@@ -666,7 +667,16 @@ function renderBoard(){
   document.getElementById('coord-file').innerHTML = files.split('').map(f=>`<span style="flex:1;text-align:center">${f}</span>`).join('');
   const sqH = document.querySelector('.sq')?.offsetHeight || 62;
   document.getElementById('coord-rank').innerHTML = ranks.split('').map(r=>`<span style="height:${sqH}px">${r}</span>`).join('');
-  document.getElementById('turn-ind').textContent = GS.turn === 'w' ? 'White to move' : 'Black to move';
+  const myColor = prep.myColor;
+  const oppColor = opponentColorCode();
+  const sideText = GS.turn === myColor ? 'Your move' : `${currentOpponentName()} to move`;
+  if (!GS.history.length && myColor === 'b') {
+    document.getElementById('turn-ind').textContent = `You are Black · ${currentOpponentName()} (White) moves first`;
+  } else if (!GS.history.length && myColor === 'w') {
+    document.getElementById('turn-ind').textContent = `You are White · your move`;
+  } else {
+    document.getElementById('turn-ind').textContent = `${sideText} · ${colorName(GS.turn)} to move`;
+  }
 }
 
 function handleClick(i){
@@ -772,6 +782,7 @@ function reannotateLibrary(){
 function updatePrepProfile(shouldResetBoard=false){
   prep.opponentName = document.getElementById('prep-opp-name').value.trim() || 'Opponent';
   prep.myColor = document.getElementById('prep-my-color').value || 'w';
+  boardFlipped = prep.myColor === 'b';
   document.getElementById('prep-opp-color').value = colorName(opponentColorCode());
   document.getElementById('pi-opp').textContent = `${currentOpponentName()} · ${colorName(opponentColorCode())}`;
   document.getElementById('opp-name').value = currentOpponentName();
@@ -785,6 +796,7 @@ function updatePrepProfile(shouldResetBoard=false){
   if (shouldResetBoard) resetBoard();
   refreshLibraryUI();
   updateProb();
+  renderBoard();
 }
 
 function syncOpponentLabel(value){
