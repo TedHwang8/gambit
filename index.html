@@ -486,9 +486,22 @@ function R(i){ return Math.floor(i / 8); }
 function C(i){ return i % 8; }
 function idx(c,r){ return r * 8 + c; }
 function rkOf(i){ return 8 - R(i); }
+function fileOf(i){ return 'abcdefgh'[C(i)]; }
+function rankOf(i){ return String(rkOf(i)); }
+function createInitialState(){
+  return {
+    board: fenToBoard('rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1'),
+    turn: 'w',
+    castling: {wK:1,wQ:1,bK:1,bQ:1},
+    ep: null,
+    history: [],
+    selSq: null,
+    validMoves: []
+  };
+}
 
-function getValidMoves(sq){
-  const b = GS.board;
+function getValidMovesForState(state, sq){
+  const b = state.board;
   const pc = b[sq];
   if (!pc) return [];
   const color = pc[0];
@@ -516,7 +529,7 @@ function getValidMoves(sq){
       if (nc >= 0 && nc < 8) {
         const cap = sq + d * 8 + dc;
         if (b[cap] && b[cap][0] !== color) moves.push(cap);
-        if (GS.ep === cap) moves.push(cap);
+        if (state.ep === cap) moves.push(cap);
       }
     }
   } else if (type === 'N') {
@@ -532,12 +545,12 @@ function getValidMoves(sq){
       if (nr >= 0 && nr < 8 && nc >= 0 && nc < 8) add(idx(nc, nr));
     }
     if (color === 'w' && r === 7 && c === 4) {
-      if (GS.castling.wK && !b[idx(5,7)] && !b[idx(6,7)] && b[idx(7,7)] === 'wR') moves.push(idx(6,7));
-      if (GS.castling.wQ && !b[idx(3,7)] && !b[idx(2,7)] && !b[idx(1,7)] && b[idx(0,7)] === 'wR') moves.push(idx(2,7));
+      if (state.castling.wK && !b[idx(5,7)] && !b[idx(6,7)] && b[idx(7,7)] === 'wR') moves.push(idx(6,7));
+      if (state.castling.wQ && !b[idx(3,7)] && !b[idx(2,7)] && !b[idx(1,7)] && b[idx(0,7)] === 'wR') moves.push(idx(2,7));
     }
     if (color === 'b' && r === 0 && c === 4) {
-      if (GS.castling.bK && !b[idx(5,0)] && !b[idx(6,0)] && b[idx(7,0)] === 'bR') moves.push(idx(6,0));
-      if (GS.castling.bQ && !b[idx(3,0)] && !b[idx(2,0)] && !b[idx(1,0)] && b[idx(0,0)] === 'bR') moves.push(idx(2,0));
+      if (state.castling.bK && !b[idx(5,0)] && !b[idx(6,0)] && b[idx(7,0)] === 'bR') moves.push(idx(6,0));
+      if (state.castling.bQ && !b[idx(3,0)] && !b[idx(2,0)] && !b[idx(1,0)] && b[idx(0,0)] === 'bR') moves.push(idx(2,0));
     }
   } else {
     const dirs = {
@@ -558,6 +571,10 @@ function getValidMoves(sq){
   return moves;
 }
 
+function getValidMoves(sq){
+  return getValidMovesForState(GS, sq);
+}
+
 function toNote(from,to,pc,cap){
   const F = 'abcdefgh';
   const ft = pc[1];
@@ -574,32 +591,44 @@ function toNote(from,to,pc,cap){
   return n;
 }
 
-function makeMove(from,to){
-  const b = GS.board;
+function applyMoveToState(state, from, to, promotion){
+  const b = state.board;
   const pc = b[from];
   const color = pc[0];
   const type = pc[1];
   const cap = b[to];
-  const note = toNote(from,to,pc,cap);
+  const epCapture = type === 'P' && state.ep === to && !cap;
+  const note = toNote(from, to, pc, cap || (epCapture ? (color === 'w' ? 'bP' : 'wP') : null));
   b[to] = pc;
   b[from] = null;
-  if (type === 'P' && GS.ep === to) b[to + (color === 'w' ? 8 : -8)] = null;
-  GS.ep = (type === 'P' && Math.abs(R(to) - R(from)) === 2) ? (from + to) / 2 : null;
+  if (epCapture) b[to + (color === 'w' ? 8 : -8)] = null;
+  state.ep = (type === 'P' && Math.abs(R(to) - R(from)) === 2) ? (from + to) / 2 : null;
   if (type === 'K') {
     if (C(to) - C(from) === 2) { b[to - 1] = b[to + 1]; b[to + 1] = null; }
     if (C(from) - C(to) === 2) { b[to + 1] = b[to - 2]; b[to - 2] = null; }
-    GS.castling[color + 'K'] = 0;
-    GS.castling[color + 'Q'] = 0;
+    state.castling[color + 'K'] = 0;
+    state.castling[color + 'Q'] = 0;
   }
   if (type === 'R') {
-    if (C(from) === 7) GS.castling[color + 'K'] = 0;
-    if (C(from) === 0) GS.castling[color + 'Q'] = 0;
+    if (C(from) === 7) state.castling[color + 'K'] = 0;
+    if (C(from) === 0) state.castling[color + 'Q'] = 0;
   }
-  if (type === 'P' && (R(to) === 0 || R(to) === 7)) b[to] = color + 'Q';
-  GS.history.push({from,to,pc,cap,note});
-  GS.turn = color === 'w' ? 'b' : 'w';
-  GS.selSq = null;
-  GS.validMoves = [];
+  if (cap && cap[1] === 'R') {
+    if (to === idx(7,7)) state.castling.wK = 0;
+    if (to === idx(0,7)) state.castling.wQ = 0;
+    if (to === idx(7,0)) state.castling.bK = 0;
+    if (to === idx(0,0)) state.castling.bQ = 0;
+  }
+  if (type === 'P' && (R(to) === 0 || R(to) === 7)) b[to] = color + (promotion || 'Q');
+  state.history.push({from,to,pc,cap,note});
+  state.turn = color === 'w' ? 'b' : 'w';
+  state.selSq = null;
+  state.validMoves = [];
+  return note;
+}
+
+function makeMove(from,to){
+  applyMoveToState(GS, from, to);
   updateMoveList();
   updateProb();
   renderBoard();
@@ -701,6 +730,66 @@ function updateMoveList(){
   el.scrollTop = el.scrollHeight;
 }
 
+function normalizeSanToken(token){
+  return (token || '').replace(/[!?+#]/g, '').trim();
+}
+
+function sanToMove(state, token){
+  const clean = normalizeSanToken(token);
+  if (!clean) return null;
+  if (clean === 'O-O' || clean === 'O-O-O') {
+    const from = state.turn === 'w' ? idx(4,7) : idx(4,0);
+    const to = clean === 'O-O'
+      ? (state.turn === 'w' ? idx(6,7) : idx(6,0))
+      : (state.turn === 'w' ? idx(2,7) : idx(2,0));
+    return { from, to, promotion:null };
+  }
+  const promotionMatch = clean.match(/=([NBRQK])$/);
+  const promotion = promotionMatch ? promotionMatch[1] : null;
+  const core = clean.replace(/=([NBRQK])$/, '');
+  const targetMatch = core.match(/([a-h][1-8])$/);
+  if (!targetMatch) return null;
+  const target = targetMatch[1];
+  const to = idx('abcdefgh'.indexOf(target[0]), 8 - Number(target[1]));
+  const pieceType = /^[NBRQK]/.test(core) ? core[0] : 'P';
+  const capture = core.includes('x');
+  let disamb = core.slice(pieceType === 'P' ? 0 : 1, core.length - 2).replace('x','');
+  const candidates = [];
+  for (let from = 0; from < 64; from++) {
+    const pc = state.board[from];
+    if (!pc || pc[0] !== state.turn || pc[1] !== pieceType) continue;
+    if (!getValidMovesForState(state, from).includes(to)) continue;
+    if (pieceType === 'P') {
+      const targetOccupied = Boolean(state.board[to]) || state.ep === to;
+      if (capture && !targetOccupied) continue;
+      if (!capture && state.board[to]) continue;
+      if (disamb && fileOf(from) !== disamb) continue;
+    } else {
+      if (disamb) {
+        const fileHint = /[a-h]/.test(disamb) ? disamb.match(/[a-h]/)[0] : null;
+        const rankHint = /[1-8]/.test(disamb) ? disamb.match(/[1-8]/)[0] : null;
+        if (fileHint && fileOf(from) !== fileHint) continue;
+        if (rankHint && rankOf(from) !== rankHint) continue;
+      }
+    }
+    candidates.push(from);
+  }
+  if (!candidates.length) return null;
+  return { from: candidates[0], to, promotion };
+}
+
+function normalizeMoves(tokens){
+  const state = createInitialState();
+  const normalized = [];
+  const rawMoves = tokens || [];
+  for (const raw of rawMoves) {
+    const move = sanToMove(state, raw);
+    if (!move) break;
+    normalized.push(applyMoveToState(state, move.from, move.to, move.promotion));
+  }
+  return { moves: normalized, rawMoves };
+}
+
 function parsePGN(pgn){
   const games = [];
   const parts = pgn.split(/(?=\[Event\s)/);
@@ -726,6 +815,7 @@ function parsePGN(pgn){
     if (!hdrs.White && !hdrs.Black) continue;
     const res = hdrs.Result || '*';
     const rc = res === '1-0' ? 'win' : res === '0-1' ? 'loss' : 'draw';
+    const normalized = normalizeMoves(tokens);
     games.push({
       white: hdrs.White || '?',
       black: hdrs.Black || '?',
@@ -734,7 +824,8 @@ function parsePGN(pgn){
       result: res,
       eco: hdrs.ECO || '',
       opening: hdrs.Opening || hdrs.ECO || '',
-      moves: tokens,
+      moves: normalized.moves,
+      rawMoves: normalized.rawMoves,
       pgn: gt.trim(),
       rc
     });
@@ -773,8 +864,18 @@ function reannotateLibrary(){
   gameLibrary = gameLibrary.map(g => {
     const opponentName = g.opponentName || g.playerLabel || currentOpponentName();
     const opponentColor = g.opponentColor || inferOpponentColor(g, opponentName);
-    if (g.opponentName !== opponentName || g.opponentColor !== opponentColor) changed = true;
-    return { ...g, opponentName, opponentColor, playerLabel: opponentName };
+    const sourceMoves = g.rawMoves || g.moves || [];
+    const normalized = normalizeMoves(sourceMoves);
+    const needsMoveFix = JSON.stringify(g.moves || []) !== JSON.stringify(normalized.moves);
+    if (g.opponentName !== opponentName || g.opponentColor !== opponentColor || needsMoveFix || !g.rawMoves) changed = true;
+    return {
+      ...g,
+      opponentName,
+      opponentColor,
+      playerLabel: opponentName,
+      rawMoves: normalized.rawMoves,
+      moves: normalized.moves
+    };
   });
   if (changed) saveLibrary();
 }
