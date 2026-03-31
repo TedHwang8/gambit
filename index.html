@@ -160,6 +160,15 @@ textarea { resize:vertical; min-height:80px; }
 <div class="panel active" id="panel-prob">
   <div class="panel-title">Move Probability Engine</div>
   <div class="panel-sub">Click pieces on the board · see opponent response probabilities from their game library</div>
+  <div class="import-card" style="margin-bottom:1.6rem;">
+    <div class="output-label">Prep Profile</div>
+    <div class="form-row">
+      <div class="fg" style="flex:1.5"><label>Opponent</label><input type="text" id="prep-opp-name" value="Joel Benjamin" placeholder="GM Joel Benjamin" oninput="updatePrepProfile()"></div>
+      <div class="fg"><label>Your Color</label><select id="prep-my-color" onchange="updatePrepProfile(true)"><option value="w">White</option><option value="b">Black</option></select></div>
+      <div class="fg"><label>Opponent Color</label><input type="text" id="prep-opp-color" value="Black" readonly></div>
+    </div>
+    <div class="hint">Set your matchup once and the library, probability engine, and prep outputs will interpret the imported player as the opponent you are preparing against.</div>
+  </div>
   <div class="prob-layout">
     <div class="board-wrap">
       <div class="board-coords-wrap">
@@ -191,6 +200,7 @@ textarea { resize:vertical; min-height:80px; }
         <div class="sec-title">Position stats</div>
         <div class="pos-info">
           <div class="pi-row"><span class="pi-key">Games in library</span><span class="pi-val" id="pi-total">0</span></div>
+          <div class="pi-row"><span class="pi-key">Opponent profile</span><span class="pi-val" id="pi-opp">Joel Benjamin · Black</span></div>
           <div class="pi-row"><span class="pi-key">Match this line</span><span class="pi-val" id="pi-match">0</span></div>
           <div class="pi-row"><span class="pi-key">Last move</span><span class="pi-val" id="pi-move">—</span></div>
           <div class="pi-row"><span class="pi-key">Move depth</span><span class="pi-val" id="pi-depth">0</span></div>
@@ -220,8 +230,8 @@ textarea { resize:vertical; min-height:80px; }
       <div class="form-row">
         <div class="fg" style="flex:3"><label>chessgames.com Player URL</label>
           <input type="text" id="url-input" value="https://www.chessgames.com/player/pid/42951" placeholder="https://www.chessgames.com/player/pid/42951"></div>
-        <div class="fg" style="flex:1;min-width:130px"><label>Player Label</label>
-          <input type="text" id="url-player" value="Joel Benjamin" placeholder="Joel Benjamin"></div>
+        <div class="fg" style="flex:1;min-width:130px"><label>Opponent Label</label>
+          <input type="text" id="url-player" value="Joel Benjamin" placeholder="Joel Benjamin" oninput="syncOpponentLabel(this.value)"></div>
       </div>
       <div style="display:flex;gap:0.7rem;align-items:center;flex-wrap:wrap;">
         <button class="btn" onclick="importFromURL()">Import Games</button>
@@ -237,7 +247,7 @@ textarea { resize:vertical; min-height:80px; }
 
     <div class="import-sec" id="import-pgn">
       <div class="form-row">
-        <div class="fg" style="flex:1;min-width:150px"><label>Player Label</label><input type="text" id="pgn-player" placeholder="Joel Benjamin"></div>
+        <div class="fg" style="flex:1;min-width:150px"><label>Opponent Label</label><input type="text" id="pgn-player" placeholder="Joel Benjamin" oninput="syncOpponentLabel(this.value)"></div>
       </div>
       <div class="fg" style="margin-bottom:0.9rem">
         <label>Paste PGN (one or more games)</label>
@@ -249,7 +259,7 @@ textarea { resize:vertical; min-height:80px; }
 
     <div class="import-sec" id="import-file">
       <div class="form-row">
-        <div class="fg" style="flex:1;min-width:140px"><label>Player Label</label><input type="text" id="file-player" placeholder="Joel Benjamin"></div>
+        <div class="fg" style="flex:1;min-width:140px"><label>Opponent Label</label><input type="text" id="file-player" placeholder="Joel Benjamin" oninput="syncOpponentLabel(this.value)"></div>
         <div class="fg" style="flex:2"><label>PGN File (.pgn)</label><input type="file" id="pgn-file" accept=".pgn,.txt" style="padding:0.42rem;"></div>
       </div>
       <button class="btn" onclick="importFromFile()">Import File</button>
@@ -263,7 +273,8 @@ textarea { resize:vertical; min-height:80px; }
     <div class="stat"><div class="sv loss" id="st-l">0</div><div class="sl">Losses</div></div>
     <div class="stat"><div class="sv draw" id="st-d">0</div><div class="sl">Draws</div></div>
     <div class="stat"><div class="sv" id="st-pct">—</div><div class="sl">Win%</div></div>
-    <div class="stat"><div class="sv" id="st-player" style="font-size:1rem">—</div><div class="sl">Player</div></div>
+    <div class="stat"><div class="sv" id="st-player" style="font-size:1rem">—</div><div class="sl">Opponent</div></div>
+    <div class="stat"><div class="sv" id="st-opp-color" style="font-size:1rem">—</div><div class="sl">Opponent Color</div></div>
   </div>
 
   <div id="gl-wrap" style="display:none">
@@ -453,6 +464,7 @@ const GLYPHS = {wK:'♔',wQ:'♕',wR:'♖',wB:'♗',wN:'♘',wP:'♙',bK:'♚',b
 let boardFlipped = false;
 let gameLibrary = [];
 let activeModalGame = null;
+let prep = { opponentName:'Joel Benjamin', myColor:'w' };
 let GS = { board:[], turn:'w', castling:{wK:1,wQ:1,bK:1,bQ:1}, ep:null, history:[], selSq:null, validMoves:[] };
 
 function fenToBoard(fen){
@@ -722,10 +734,71 @@ function parsePGN(pgn){
 
 function getMoveSeq(){ return GS.history.map(h => h.note.replace(/[+#!?]/g,'')); }
 
+function opponentColorCode(){ return prep.myColor === 'w' ? 'b' : 'w'; }
+function colorName(code){ return code === 'w' ? 'White' : 'Black'; }
+function normalizeName(name){ return (name || '').toLowerCase().replace(/[^a-z0-9]+/g,' ').trim(); }
+function currentOpponentName(){ return (prep.opponentName || 'Opponent').trim() || 'Opponent'; }
+
+function inferOpponentColor(game, opponentName){
+  const target = normalizeName(opponentName || game.playerLabel);
+  const white = normalizeName(game.white);
+  const black = normalizeName(game.black);
+  if (target && white.includes(target)) return 'w';
+  if (target && black.includes(target)) return 'b';
+  if (target) {
+    const tokens = target.split(' ').filter(Boolean);
+    if (tokens.some(t => t.length > 2 && white.includes(t))) return 'w';
+    if (tokens.some(t => t.length > 2 && black.includes(t))) return 'b';
+  }
+  return null;
+}
+
+function relevantGames(){
+  const targetColor = opponentColorCode();
+  return gameLibrary.filter(g => !g.opponentColor || g.opponentColor === targetColor);
+}
+
+function reannotateLibrary(){
+  let changed = false;
+  gameLibrary = gameLibrary.map(g => {
+    const opponentName = g.opponentName || g.playerLabel || currentOpponentName();
+    const opponentColor = g.opponentColor || inferOpponentColor(g, opponentName);
+    if (g.opponentName !== opponentName || g.opponentColor !== opponentColor) changed = true;
+    return { ...g, opponentName, opponentColor, playerLabel: opponentName };
+  });
+  if (changed) saveLibrary();
+}
+
+function updatePrepProfile(shouldResetBoard=false){
+  prep.opponentName = document.getElementById('prep-opp-name').value.trim() || 'Opponent';
+  prep.myColor = document.getElementById('prep-my-color').value || 'w';
+  document.getElementById('prep-opp-color').value = colorName(opponentColorCode());
+  document.getElementById('pi-opp').textContent = `${currentOpponentName()} · ${colorName(opponentColorCode())}`;
+  document.getElementById('opp-name').value = currentOpponentName();
+  document.getElementById('op-color').value = prep.myColor === 'w' ? 'White' : 'Black';
+  document.getElementById('url-player').value = currentOpponentName();
+  if (!document.getElementById('pgn-player').value.trim()) document.getElementById('pgn-player').value = currentOpponentName();
+  if (!document.getElementById('file-player').value.trim()) document.getElementById('file-player').value = currentOpponentName();
+  document.getElementById('st-opp-color').textContent = colorName(opponentColorCode());
+  reannotateLibrary();
+  saveLibrary();
+  if (shouldResetBoard) resetBoard();
+  refreshLibraryUI();
+  updateProb();
+}
+
+function syncOpponentLabel(value){
+  const v = value.trim();
+  if (!v) return;
+  document.getElementById('prep-opp-name').value = v;
+  updatePrepProfile();
+}
+
 function updateProb(){
   const seq = getMoveSeq();
   const depth = seq.length;
-  const total = gameLibrary.length;
+  const scopedGames = relevantGames();
+  const total = scopedGames.length;
   document.getElementById('pi-total').textContent = total;
   document.getElementById('pi-depth').textContent = depth;
   document.getElementById('pi-move').textContent = depth ? seq[depth - 1] : '—';
@@ -734,7 +807,7 @@ function updateProb(){
     document.getElementById('pi-match').textContent = '0';
     return;
   }
-  const matching = gameLibrary.filter(g => {
+  const matching = scopedGames.filter(g => {
     for (let i = 0; i < seq.length; i++) {
       if (!g.moves[i] || g.moves[i].replace(/[+#!?]/g,'') !== seq[i]) return false;
     }
@@ -850,6 +923,7 @@ function importFromFile(){
 
 function saveLibrary(){
   localStorage.setItem('gambit-library', JSON.stringify(gameLibrary));
+  localStorage.setItem('gambit-prep', JSON.stringify(prep));
 }
 
 function loadLibrary(){
@@ -859,13 +933,28 @@ function loadLibrary(){
     const parsed = JSON.parse(raw);
     if (Array.isArray(parsed)) gameLibrary = parsed;
   } catch (_) {}
+  try {
+    const rawPrep = localStorage.getItem('gambit-prep');
+    if (!rawPrep) return;
+    const parsedPrep = JSON.parse(rawPrep);
+    if (parsedPrep && typeof parsedPrep === 'object') prep = {...prep, ...parsedPrep};
+  } catch (_) {}
 }
 
 function addGames(games,player,replacePlayer=false){
   const existing = new Set(gameLibrary.map(g => g.pgn));
   const incoming = games
     .filter(g => !existing.has(g.pgn))
-    .map(g => ({...g, playerLabel: player}));
+    .map(g => {
+      const opponentName = player || currentOpponentName();
+      const inferred = inferOpponentColor(g, opponentName);
+      return {
+        ...g,
+        playerLabel: opponentName,
+        opponentName,
+        opponentColor: inferred
+      };
+    });
   if (replacePlayer) {
     gameLibrary = gameLibrary.filter(g => g.playerLabel !== player);
   }
@@ -886,17 +975,19 @@ function clearLibrary(){
 }
 
 function refreshLibraryUI(){
-  const tot = gameLibrary.length;
-  const w = gameLibrary.filter(g=>g.rc==='win').length;
-  const l = gameLibrary.filter(g=>g.rc==='loss').length;
-  const d = gameLibrary.filter(g=>g.rc==='draw').length;
+  const scopedGames = relevantGames();
+  const tot = scopedGames.length;
+  const w = scopedGames.filter(g=>g.rc==='win').length;
+  const l = scopedGames.filter(g=>g.rc==='loss').length;
+  const d = scopedGames.filter(g=>g.rc==='draw').length;
   document.getElementById('st-total').textContent = tot;
   document.getElementById('st-w').textContent = w;
   document.getElementById('st-l').textContent = l;
   document.getElementById('st-d').textContent = d;
   document.getElementById('st-pct').textContent = tot ? Math.round((w + d * 0.5) / tot * 100) + '%' : '—';
-  const players = [...new Set(gameLibrary.map(g=>g.playerLabel))];
+  const players = [...new Set(scopedGames.map(g=>g.playerLabel))];
   document.getElementById('st-player').textContent = players.join(', ') || '—';
+  document.getElementById('st-opp-color').textContent = colorName(opponentColorCode());
   const show = tot > 0;
   document.getElementById('stats-bar').style.display = show ? 'flex' : 'none';
   document.getElementById('gl-wrap').style.display = show ? 'block' : 'none';
@@ -908,7 +999,7 @@ function renderGL(){
   const s = (document.getElementById('f-search').value || '').toLowerCase();
   const r = document.getElementById('f-result').value;
   const y = document.getElementById('f-year').value;
-  const filtered = gameLibrary.filter(g => {
+  const filtered = relevantGames().filter(g => {
     if (s && !(g.white + g.black + g.event + g.opening).toLowerCase().includes(s)) return false;
     if (r && g.rc !== r) return false;
     if (y && !g.date.includes(y)) return false;
@@ -962,22 +1053,23 @@ function loadGameToBoard(){
 }
 
 function libSummary(){
-  if (!gameLibrary.length) return '';
+  const scopedGames = relevantGames();
+  if (!scopedGames.length) return '';
   const ops = {};
-  for (const g of gameLibrary) {
+  for (const g of scopedGames) {
     const k = g.opening || g.eco || '?';
     ops[k] = (ops[k] || 0) + 1;
   }
   const top = Object.entries(ops).sort((a,b)=>b[1]-a[1]).slice(0,5).map(([k,v])=>`${k} (${v}x)`).join(', ');
-  const w = gameLibrary.filter(g=>g.rc==='win').length;
-  const d = gameLibrary.filter(g=>g.rc==='draw').length;
-  const tot = gameLibrary.length;
+  const w = scopedGames.filter(g=>g.rc==='win').length;
+  const d = scopedGames.filter(g=>g.rc==='draw').length;
+  const tot = scopedGames.length;
   return { top, tot, score: Math.round((w + d * 0.5) / tot * 100) };
 }
 
 function currentMoveFrequencies(){
   const seq = getMoveSeq();
-  const matching = gameLibrary.filter(g => seq.every((mv, i) => (g.moves[i] || '').replace(/[+#!?]/g,'') === mv));
+  const matching = relevantGames().filter(g => seq.every((mv, i) => (g.moves[i] || '').replace(/[+#!?]/g,'') === mv));
   const counts = {};
   matching.forEach(g => {
     const next = g.moves[seq.length];
@@ -1120,6 +1212,12 @@ function toggleChip(el){ el.classList.toggle('selected'); }
 function getChips(id){ return [...document.querySelectorAll(`#${id} .chip.selected`)].map(c=>c.textContent).join(', '); }
 
 loadLibrary();
+document.getElementById('prep-opp-name').value = currentOpponentName();
+document.getElementById('prep-my-color').value = prep.myColor;
+document.getElementById('url-player').value = currentOpponentName();
+document.getElementById('pgn-player').value = currentOpponentName();
+document.getElementById('file-player').value = currentOpponentName();
+updatePrepProfile();
 resetBoard();
 refreshLibraryUI();
 
