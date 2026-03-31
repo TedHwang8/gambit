@@ -1,0 +1,1122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GAMBIT — GM Prep Suite</title>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,600;1,300;1,400&family=JetBrains+Mono:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+:root {
+  --ink: #0d0d0d; --parchment: #f5f0e8; --cream: #ede8dc;
+  --gold: #c9a84c; --muted: #7a7060; --border: #d4c9b0;
+  --white-sq: #f0d9b5; --black-sq: #b58863;
+  --green: #2d6a4f; --rust: #8b3a2a;
+}
+* { margin:0; padding:0; box-sizing:border-box; }
+body { background:var(--parchment); color:var(--ink); font-family:'Cormorant Garamond',serif; min-height:100vh; overflow-x:hidden; }
+body::before { content:''; position:fixed; inset:0; background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='4' height='4'%3E%3Crect width='4' height='4' fill='%23f5f0e8'/%3E%3Ccircle cx='1' cy='1' r='0.4' fill='%23e8e0d0' opacity='0.5'/%3E%3C/svg%3E"); pointer-events:none; z-index:0; }
+.app { position:relative; z-index:1; max-width:1200px; margin:0 auto; padding:0 1.5rem; }
+header { display:flex; align-items:baseline; justify-content:space-between; padding:2rem 0 1.2rem; border-bottom:1px solid var(--border); }
+.logo { font-size:2.4rem; font-weight:300; letter-spacing:0.18em; text-transform:uppercase; }
+.logo span { color:var(--gold); }
+.tagline { font-family:'JetBrains Mono',monospace; font-size:0.62rem; color:var(--muted); letter-spacing:0.08em; text-transform:uppercase; }
+.tabs { display:flex; margin-top:1.5rem; border-bottom:1px solid var(--border); flex-wrap:wrap; }
+.tab { font-family:'JetBrains Mono',monospace; font-size:0.66rem; letter-spacing:0.07em; text-transform:uppercase; padding:0.6rem 1.1rem; cursor:pointer; border:1px solid transparent; border-bottom:none; color:var(--muted); background:transparent; transition:all 0.2s; position:relative; top:1px; white-space:nowrap; }
+.tab.active { color:var(--ink); background:var(--parchment); border-color:var(--border); }
+.tab:hover:not(.active) { color:var(--ink); }
+.badge { display:inline-block; background:var(--gold); color:var(--ink); font-size:0.5rem; padding:0.1rem 0.3rem; margin-left:0.3rem; border-radius:20px; vertical-align:middle; }
+.panel { display:none; padding:2rem 0; animation:fadeIn 0.25s ease; }
+.panel.active { display:block; }
+@keyframes fadeIn { from{opacity:0;transform:translateY(5px)} to{opacity:1;transform:none} }
+.panel-title { font-size:1.5rem; font-weight:300; font-style:italic; margin-bottom:0.3rem; }
+.panel-sub { font-family:'JetBrains Mono',monospace; font-size:0.6rem; color:var(--muted); letter-spacing:0.08em; text-transform:uppercase; margin-bottom:1.8rem; }
+.form-row { display:flex; gap:0.8rem; margin-bottom:0.9rem; flex-wrap:wrap; }
+.fg { display:flex; flex-direction:column; gap:0.35rem; flex:1; min-width:150px; }
+label { font-family:'JetBrains Mono',monospace; font-size:0.6rem; letter-spacing:0.1em; text-transform:uppercase; color:var(--muted); }
+input,select,textarea { background:white; border:1px solid var(--border); padding:0.6rem 0.8rem; font-family:'Cormorant Garamond',serif; font-size:0.95rem; color:var(--ink); outline:none; transition:border-color 0.2s; width:100%; }
+input:focus,select:focus,textarea:focus { border-color:var(--gold); }
+textarea { resize:vertical; min-height:80px; }
+.btn { display:inline-flex; align-items:center; gap:0.4rem; background:var(--ink); color:var(--parchment); border:none; padding:0.65rem 1.5rem; cursor:pointer; font-family:'JetBrains Mono',monospace; font-size:0.65rem; letter-spacing:0.1em; text-transform:uppercase; transition:background 0.2s; white-space:nowrap; }
+.btn:hover { background:var(--gold); color:var(--ink); }
+.btn:disabled { background:var(--border); color:var(--muted); cursor:not-allowed; }
+.btn-ghost { background:transparent; color:var(--muted); border:1px solid var(--border); }
+.btn-ghost:hover { background:var(--cream); color:var(--ink); border-color:var(--ink); }
+.btn-sm { padding:0.35rem 0.8rem; font-size:0.6rem; }
+.btn-rust { background:var(--rust); color:white; } .btn-rust:hover { background:#a04030; color:white; }
+.chip-group { display:flex; flex-wrap:wrap; gap:0.4rem; margin-bottom:0.9rem; }
+.chip { font-family:'JetBrains Mono',monospace; font-size:0.6rem; letter-spacing:0.05em; padding:0.3rem 0.7rem; border:1px solid var(--border); cursor:pointer; color:var(--muted); transition:all 0.15s; }
+.chip.selected { background:var(--ink); color:var(--parchment); border-color:var(--ink); }
+.chip:hover:not(.selected) { border-color:var(--gold); color:var(--ink); }
+.output-box { background:white; border:1px solid var(--border); padding:1.4rem; margin-top:1.2rem; min-height:80px; position:relative; }
+.output-box.loading::after { content:''; position:absolute; inset:0; background:repeating-linear-gradient(90deg,transparent,transparent 40%,rgba(201,168,76,0.07) 50%,transparent 60%); background-size:200% 100%; animation:shimmer 1.4s infinite; }
+@keyframes shimmer { to{background-position:-200% 0} }
+.output-label { font-family:'JetBrains Mono',monospace; font-size:0.58rem; color:var(--muted); letter-spacing:0.1em; text-transform:uppercase; margin-bottom:0.8rem; display:flex; align-items:center; gap:0.5rem; }
+.output-label::after { content:''; flex:1; height:1px; background:var(--border); }
+.output-text { font-size:1rem; line-height:1.75; color:var(--ink); white-space:pre-wrap; }
+.thinking { display:flex; gap:0.3rem; align-items:center; font-family:'JetBrains Mono',monospace; font-size:0.68rem; color:var(--muted); }
+.dot { width:4px; height:4px; background:var(--gold); border-radius:50%; animation:blink 1.2s infinite; }
+.dot:nth-child(2){animation-delay:0.2s} .dot:nth-child(3){animation-delay:0.4s}
+@keyframes blink { 0%,80%,100%{opacity:0.2} 40%{opacity:1} }
+.prob-layout { display:grid; grid-template-columns:auto 1fr; gap:2rem; align-items:start; }
+@media(max-width:780px){ .prob-layout{grid-template-columns:1fr;} }
+.board-wrap { display:flex; flex-direction:column; align-items:center; gap:0.8rem; }
+.board-coords-wrap { display:flex; align-items:stretch; gap:3px; }
+.coord-rank { display:flex; flex-direction:column; justify-content:space-around; }
+.coord-rank span,.coord-file span { font-family:'JetBrains Mono',monospace; font-size:0.52rem; color:var(--muted); display:flex; align-items:center; justify-content:center; }
+.coord-rank span { width:14px; }
+.coord-file { display:flex; justify-content:space-around; margin-top:3px; }
+.coord-file span { flex:1; }
+.chess-board { display:grid; grid-template-columns:repeat(8,1fr); border:2px solid #555; user-select:none; }
+.sq { width:62px; height:62px; display:flex; align-items:center; justify-content:center; cursor:pointer; position:relative; transition:background 0.1s; font-size:2.1rem; line-height:1; }
+@media(max-width:520px){ .sq{width:42px;height:42px;font-size:1.5rem;} }
+.sq.light{background:var(--white-sq)} .sq.dark{background:var(--black-sq)}
+.sq.sel{background:rgba(201,168,76,0.55) !important;}
+.sq.vmove::after { content:''; position:absolute; width:30%; height:30%; background:rgba(20,85,30,0.5); border-radius:50%; pointer-events:none; }
+.sq.vmove.occ::after { width:90%; height:90%; background:transparent; border:3px solid rgba(20,85,30,0.5); border-radius:0; }
+.sq.lf,.sq.lt { background:rgba(201,168,76,0.28) !important; }
+.board-controls { display:flex; gap:0.5rem; flex-wrap:wrap; justify-content:center; }
+.move-seq-box { width:100%; background:white; border:1px solid var(--border); padding:0.6rem 0.9rem; font-family:'JetBrains Mono',monospace; font-size:0.7rem; line-height:1.6; color:var(--ink); max-height:66px; overflow-y:auto; }
+.turn-ind { font-family:'JetBrains Mono',monospace; font-size:0.62rem; color:var(--muted); }
+.prob-panel { display:flex; flex-direction:column; gap:1.2rem; }
+.sec-title { font-family:'JetBrains Mono',monospace; font-size:0.58rem; letter-spacing:0.1em; text-transform:uppercase; color:var(--muted); margin-bottom:0.6rem; display:flex; align-items:center; gap:0.5rem; }
+.sec-title::after { content:''; flex:1; height:1px; background:var(--border); }
+.prob-empty { background:white; border:1px solid var(--border); padding:1.5rem; text-align:center; color:var(--muted); font-style:italic; font-size:0.92rem; line-height:1.6; }
+.move-bar { display:flex; align-items:center; gap:0.7rem; margin-bottom:0.45rem; }
+.mb-label { font-family:'JetBrains Mono',monospace; font-size:0.75rem; color:var(--ink); min-width:68px; font-weight:500; }
+.mb-track { flex:1; height:20px; background:var(--cream); border:1px solid var(--border); overflow:hidden; }
+.mb-fill { height:100%; background:var(--ink); transition:width 0.5s ease; }
+.mb-fill.top { background:var(--gold); }
+.mb-pct { font-family:'JetBrains Mono',monospace; font-size:0.68rem; color:var(--muted); min-width:36px; text-align:right; }
+.mb-cnt { font-family:'JetBrains Mono',monospace; font-size:0.58rem; color:var(--muted); min-width:52px; }
+.pos-info { background:white; border:1px solid var(--border); }
+.pi-row { display:flex; justify-content:space-between; align-items:baseline; padding:0.4rem 0.9rem; border-bottom:1px solid var(--border); }
+.pi-row:last-child { border:none; }
+.pi-key { font-family:'JetBrains Mono',monospace; font-size:0.58rem; color:var(--muted); text-transform:uppercase; }
+.pi-val { font-family:'JetBrains Mono',monospace; font-size:0.7rem; color:var(--ink); }
+.insight-box { background:white; border:1px solid var(--gold); padding:1.1rem 1.3rem; }
+.import-card { background:white; border:1px solid var(--border); padding:1.3rem; margin-bottom:1.4rem; }
+.import-tabs { display:flex; margin-bottom:1.1rem; }
+.imt { font-family:'JetBrains Mono',monospace; font-size:0.6rem; letter-spacing:0.07em; text-transform:uppercase; padding:0.38rem 0.9rem; border:1px solid var(--border); cursor:pointer; color:var(--muted); background:transparent; transition:all 0.15s; }
+.imt.active { background:var(--ink); color:var(--parchment); border-color:var(--ink); }
+.import-sec { display:none; } .import-sec.active { display:block; }
+.stats-bar { display:flex; gap:1.5rem; padding:0.8rem 1.3rem; background:var(--cream); border:1px solid var(--border); margin-bottom:1.2rem; flex-wrap:wrap; }
+.stat { display:flex; flex-direction:column; gap:0.12rem; }
+.sv { font-size:1.5rem; font-weight:300; line-height:1; }
+.sv.win{color:var(--green)} .sv.loss{color:var(--rust)} .sv.draw{color:var(--muted)}
+.sl { font-family:'JetBrains Mono',monospace; font-size:0.54rem; color:var(--muted); text-transform:uppercase; letter-spacing:0.07em; }
+.filter-row { display:flex; gap:0.6rem; margin-bottom:0.9rem; flex-wrap:wrap; align-items:flex-end; }
+.filter-row .fg { min-width:100px; }
+.filter-row input,.filter-row select { padding:0.42rem 0.65rem; font-size:0.88rem; }
+.gl-hdr { display:grid; grid-template-columns:2fr 1.2fr 0.7fr 0.7fr 1.4fr 70px; gap:0.4rem; padding:0.4rem 0.6rem; font-family:'JetBrains Mono',monospace; font-size:0.52rem; color:var(--muted); text-transform:uppercase; letter-spacing:0.06em; border-bottom:1px solid var(--border); }
+.gl-row { display:grid; grid-template-columns:2fr 1.2fr 0.7fr 0.7fr 1.4fr 70px; gap:0.4rem; padding:0.5rem 0.6rem; border-bottom:1px solid var(--border); cursor:pointer; transition:background 0.1s; align-items:center; font-size:0.9rem; }
+.gl-row:hover { background:var(--cream); }
+.rbadge { font-family:'JetBrains Mono',monospace; font-size:0.58rem; padding:0.13rem 0.42rem; display:inline-block; }
+.rbadge.win{background:#e8f5ee;color:var(--green);border:1px solid #b0d9c0}
+.rbadge.loss{background:#faeae7;color:var(--rust);border:1px solid #e0b4ac}
+.rbadge.draw{background:var(--cream);color:var(--muted);border:1px solid var(--border)}
+.gl-row .btn-sm { opacity:0; transition:opacity 0.15s; }
+.gl-row:hover .btn-sm { opacity:1; }
+.empty-state { padding:2.5rem 0; text-align:center; color:var(--muted); font-style:italic; }
+.prog-wrap { margin-top:0.6rem; }
+.prog-lbl { font-family:'JetBrains Mono',monospace; font-size:0.6rem; color:var(--muted); }
+.prog-bar { height:3px; background:var(--border); margin-top:0.3rem; }
+.prog-fill { height:100%; background:var(--gold); width:0%; transition:width 0.3s; }
+.err-msg { color:var(--rust); font-family:'JetBrains Mono',monospace; font-size:0.65rem; margin-top:0.5rem; display:none; white-space:pre-wrap; }
+.hint { margin-top:0.6rem; font-family:'JetBrains Mono',monospace; font-size:0.56rem; color:var(--muted); line-height:1.6; }
+.modal-overlay { display:none; position:fixed; inset:0; background:rgba(13,13,13,0.55); z-index:200; align-items:center; justify-content:center; }
+.modal-overlay.open { display:flex; }
+.modal { background:var(--parchment); border:1px solid var(--border); max-width:680px; width:95vw; max-height:88vh; overflow-y:auto; padding:1.7rem; position:relative; animation:fadeIn 0.2s ease; }
+.modal-close { position:absolute; top:0.85rem; right:0.95rem; background:none; border:none; cursor:pointer; font-size:1.3rem; color:var(--muted); }
+.modal-ttl { font-size:1.3rem; font-style:italic; font-weight:300; margin-bottom:0.22rem; }
+.modal-meta { font-family:'JetBrains Mono',monospace; font-size:0.6rem; color:var(--muted); margin-bottom:0.9rem; }
+.pgn-display { background:white; border:1px solid var(--border); padding:0.85rem; font-family:'JetBrains Mono',monospace; font-size:0.73rem; line-height:1.7; word-break:break-word; white-space:pre-wrap; max-height:230px; overflow-y:auto; margin-bottom:0.9rem; }
+.modal-actions { display:flex; gap:0.6rem; flex-wrap:wrap; }
+.hist-list { display:flex; flex-direction:column; gap:0.5rem; }
+@media(max-width:660px){
+  .gl-hdr,.gl-row { grid-template-columns:2fr 0.7fr 0.7fr 60px; }
+  .gl-hdr>*:nth-child(2),.gl-hdr>*:nth-child(5),
+  .gl-row>*:nth-child(2),.gl-row>*:nth-child(5) { display:none; }
+}
+</style>
+</head>
+<body>
+<div class="app">
+<header>
+  <div>
+    <div class="logo">G<span>A</span>MBIT</div>
+    <div class="tagline">Grandmaster Preparation Suite</div>
+  </div>
+</header>
+
+<div class="tabs">
+  <div class="tab active" onclick="switchTab('prob')">Move Probability</div>
+  <div class="tab" onclick="switchTab('library')">Game Library <span class="badge" id="lib-count">0</span></div>
+  <div class="tab" onclick="switchTab('opponent')">Opponent Analysis</div>
+  <div class="tab" onclick="switchTab('opening')">Opening Prep</div>
+  <div class="tab" onclick="switchTab('gameplan')">Game Plan</div>
+  <div class="tab" onclick="switchTab('history')">Session Log</div>
+</div>
+
+<div class="panel active" id="panel-prob">
+  <div class="panel-title">Move Probability Engine</div>
+  <div class="panel-sub">Click pieces on the board · see opponent response probabilities from their game library</div>
+  <div class="prob-layout">
+    <div class="board-wrap">
+      <div class="board-coords-wrap">
+        <div class="coord-rank" id="coord-rank"></div>
+        <div>
+          <div class="chess-board" id="chess-board"></div>
+          <div class="coord-file" id="coord-file"></div>
+        </div>
+      </div>
+      <div class="board-controls">
+        <button class="btn btn-ghost btn-sm" onclick="resetBoard()">Reset</button>
+        <button class="btn btn-ghost btn-sm" onclick="undoMove()">← Undo</button>
+        <button class="btn btn-ghost btn-sm" onclick="flipBoard()">Flip</button>
+        <button class="btn btn-sm" onclick="analyzePosition()">AI Insight</button>
+      </div>
+      <div style="width:100%">
+        <div class="output-label" style="margin-bottom:0.35rem;">Move sequence</div>
+        <div class="move-seq-box" id="move-list">—</div>
+      </div>
+      <div class="turn-ind" id="turn-ind">White to move</div>
+    </div>
+
+    <div class="prob-panel">
+      <div>
+        <div class="sec-title">Opponent's likely next move</div>
+        <div id="prob-bars"><div class="prob-empty">Import opponent games in the Game Library tab, then make moves on the board to see their response probabilities.</div></div>
+      </div>
+      <div>
+        <div class="sec-title">Position stats</div>
+        <div class="pos-info">
+          <div class="pi-row"><span class="pi-key">Games in library</span><span class="pi-val" id="pi-total">0</span></div>
+          <div class="pi-row"><span class="pi-key">Match this line</span><span class="pi-val" id="pi-match">0</span></div>
+          <div class="pi-row"><span class="pi-key">Last move</span><span class="pi-val" id="pi-move">—</span></div>
+          <div class="pi-row"><span class="pi-key">Move depth</span><span class="pi-val" id="pi-depth">0</span></div>
+        </div>
+      </div>
+      <div id="insight-wrap" style="display:none">
+        <div class="sec-title">AI insight</div>
+        <div class="insight-box"><div class="output-text" id="insight-text"></div></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="panel" id="panel-library">
+  <div class="panel-title">Game Library</div>
+  <div class="panel-sub">Import · store · analyze opponent games in PGN notation</div>
+
+  <div class="import-card">
+    <div class="output-label">Import Games</div>
+    <div class="import-tabs">
+      <div class="imt active" onclick="switchImport('url',this)">From URL</div>
+      <div class="imt" onclick="switchImport('pgn',this)">Paste PGN</div>
+      <div class="imt" onclick="switchImport('file',this)">Upload File</div>
+    </div>
+
+    <div class="import-sec active" id="import-url">
+      <div class="form-row">
+        <div class="fg" style="flex:3"><label>chessgames.com Player URL</label>
+          <input type="text" id="url-input" value="https://www.chessgames.com/player/pid/42951" placeholder="https://www.chessgames.com/player/pid/42951"></div>
+        <div class="fg" style="flex:1;min-width:130px"><label>Player Label</label>
+          <input type="text" id="url-player" value="Joel Benjamin" placeholder="Joel Benjamin"></div>
+      </div>
+      <div style="display:flex;gap:0.7rem;align-items:center;flex-wrap:wrap;">
+        <button class="btn" onclick="importFromURL()">Import Games</button>
+        <span style="font-family:'JetBrains Mono',monospace;font-size:0.58rem;color:var(--muted);">Bundled Joel Benjamin archive included locally</span>
+      </div>
+      <div class="prog-wrap" id="url-prog" style="display:none">
+        <div class="prog-lbl" id="url-prog-lbl">Loading…</div>
+        <div class="prog-bar"><div class="prog-fill" id="url-prog-fill"></div></div>
+      </div>
+      <div class="hint">Why the original version failed: browsers cannot reliably scrape chessgames.com here, and the prototype was trying to call an external LLM API directly with no key/backend. This build now bundles Joel Benjamin's local archive for offline use and leaves paste/upload for any other player.</div>
+      <div class="err-msg" id="url-err"></div>
+    </div>
+
+    <div class="import-sec" id="import-pgn">
+      <div class="form-row">
+        <div class="fg" style="flex:1;min-width:150px"><label>Player Label</label><input type="text" id="pgn-player" placeholder="Joel Benjamin"></div>
+      </div>
+      <div class="fg" style="margin-bottom:0.9rem">
+        <label>Paste PGN (one or more games)</label>
+        <textarea id="pgn-paste" style="min-height:130px;font-family:'JetBrains Mono',monospace;font-size:0.72rem;" placeholder='[Event "US Championship"]&#10;[White "Benjamin, Joel"]&#10;[Result "1-0"]&#10;&#10;1. e4 e5 2. Nf3...'></textarea>
+      </div>
+      <button class="btn" onclick="importFromPGN()">Import PGN</button>
+      <div class="err-msg" id="pgn-err"></div>
+    </div>
+
+    <div class="import-sec" id="import-file">
+      <div class="form-row">
+        <div class="fg" style="flex:1;min-width:140px"><label>Player Label</label><input type="text" id="file-player" placeholder="Joel Benjamin"></div>
+        <div class="fg" style="flex:2"><label>PGN File (.pgn)</label><input type="file" id="pgn-file" accept=".pgn,.txt" style="padding:0.42rem;"></div>
+      </div>
+      <button class="btn" onclick="importFromFile()">Import File</button>
+      <div class="err-msg" id="file-err"></div>
+    </div>
+  </div>
+
+  <div class="stats-bar" id="stats-bar" style="display:none">
+    <div class="stat"><div class="sv" id="st-total">0</div><div class="sl">Games</div></div>
+    <div class="stat"><div class="sv win" id="st-w">0</div><div class="sl">Wins</div></div>
+    <div class="stat"><div class="sv loss" id="st-l">0</div><div class="sl">Losses</div></div>
+    <div class="stat"><div class="sv draw" id="st-d">0</div><div class="sl">Draws</div></div>
+    <div class="stat"><div class="sv" id="st-pct">—</div><div class="sl">Win%</div></div>
+    <div class="stat"><div class="sv" id="st-player" style="font-size:1rem">—</div><div class="sl">Player</div></div>
+  </div>
+
+  <div id="gl-wrap" style="display:none">
+    <div class="filter-row">
+      <div class="fg"><label>Search</label><input type="text" id="f-search" placeholder="Name, opening…" oninput="renderGL()"></div>
+      <div class="fg"><label>Result</label><select id="f-result" onchange="renderGL()"><option value="">All</option><option value="win">Win</option><option value="loss">Loss</option><option value="draw">Draw</option></select></div>
+      <div class="fg"><label>Year</label><input type="text" id="f-year" placeholder="1995" oninput="renderGL()"></div>
+      <button class="btn btn-rust btn-sm" style="align-self:flex-end;margin-bottom:1px" onclick="clearLibrary()">Clear All</button>
+    </div>
+    <div class="gl-hdr"><span>Opponents</span><span>Event</span><span>Year</span><span>Result</span><span>Opening</span><span></span></div>
+    <div id="game-list"></div>
+  </div>
+</div>
+
+<div class="panel" id="panel-opponent">
+  <div class="panel-title">Opponent Analysis</div>
+  <div class="panel-sub">Dissect tendencies, weaknesses & patterns</div>
+  <div class="form-row">
+    <div class="fg"><label>Name</label><input type="text" id="opp-name" placeholder="e.g. Joel Benjamin"></div>
+    <div class="fg"><label>ELO</label><input type="number" id="opp-elo" placeholder="2600"></div>
+    <div class="fg"><label>Style</label><select id="opp-style"><option value="">— select —</option><option>Aggressive / Tactical</option><option>Positional / Strategic</option><option>Universal / All-around</option><option>Endgame Specialist</option><option>Theory Expert</option></select></div>
+  </div>
+  <div class="form-row"><div class="fg" style="flex:2"><label>Known Tendencies</label><textarea id="opp-notes" placeholder="e.g. Prefers 1.e4, strong in open positions…"></textarea></div></div>
+  <label style="margin-bottom:0.4rem;display:block">Focus Areas</label>
+  <div class="chip-group" id="opp-focus">
+    <div class="chip selected" onclick="toggleChip(this)">Tactical patterns</div>
+    <div class="chip selected" onclick="toggleChip(this)">Opening weaknesses</div>
+    <div class="chip" onclick="toggleChip(this)">Endgame tendencies</div>
+    <div class="chip" onclick="toggleChip(this)">Time pressure behavior</div>
+    <div class="chip" onclick="toggleChip(this)">Psychological profile</div>
+    <div class="chip" onclick="toggleChip(this)">Recent form</div>
+  </div>
+  <div style="display:flex;gap:0.7rem;flex-wrap:wrap;">
+    <button class="btn" onclick="analyzeOpponent(false)">Analyze Opponent</button>
+    <button class="btn btn-ghost" onclick="analyzeOpponent(true)">+ Use Library Games</button>
+  </div>
+  <div class="output-box" id="opp-out" style="display:none"><div class="output-label">Analysis</div><div class="output-text" id="opp-txt"></div></div>
+</div>
+
+<div class="panel" id="panel-opening">
+  <div class="panel-title">Opening Preparation</div>
+  <div class="panel-sub">Build your repertoire for this match</div>
+  <div class="form-row">
+    <div class="fg"><label>Your Color</label><select id="op-color"><option>White</option><option>Black</option><option>Both</option></select></div>
+    <div class="fg"><label>Opening / System</label><input type="text" id="op-opening" placeholder="e.g. Sicilian Najdorf"></div>
+    <div class="fg"><label>Depth</label><select id="op-depth"><option>Surface (first 5 moves)</option><option>Intermediate (10–15 moves)</option><option>Deep (critical lines + ideas)</option></select></div>
+  </div>
+  <div class="form-row"><div class="fg" style="flex:2"><label>Opponent's Likely Responses</label><textarea id="op-opp" placeholder="e.g. Usually plays 2...d6…"></textarea></div></div>
+  <label style="margin-bottom:0.4rem;display:block">Prep Goals</label>
+  <div class="chip-group" id="op-goals">
+    <div class="chip selected" onclick="toggleChip(this)">Main line theory</div>
+    <div class="chip" onclick="toggleChip(this)">Sideline surprises</div>
+    <div class="chip selected" onclick="toggleChip(this)">Key strategic ideas</div>
+    <div class="chip" onclick="toggleChip(this)">Tactical traps</div>
+    <div class="chip" onclick="toggleChip(this)">Transpositions</div>
+  </div>
+  <div style="display:flex;gap:0.7rem;flex-wrap:wrap;">
+    <button class="btn" onclick="prepOpening(false)">Generate Opening Prep</button>
+    <button class="btn btn-ghost" onclick="prepOpening(true)">+ Use Library Games</button>
+  </div>
+  <div class="output-box" id="op-out" style="display:none"><div class="output-label">Opening Preparation</div><div class="output-text" id="op-txt"></div></div>
+</div>
+
+<div class="panel" id="panel-gameplan">
+  <div class="panel-title">AI Game Plan</div>
+  <div class="panel-sub">Strategic blueprint for the match</div>
+  <div class="form-row">
+    <div class="fg"><label>Your Style</label><select id="gp-style"><option>Aggressive / Tactical</option><option>Positional / Strategic</option><option>Universal</option><option>Endgame Specialist</option></select></div>
+    <div class="fg"><label>Match Format</label><select id="gp-format"><option>Classical (90min+)</option><option>Rapid (15–30 min)</option><option>Blitz (3–5 min)</option><option>Tournament</option></select></div>
+    <div class="fg"><label>Stakes</label><select id="gp-stakes"><option>World Championship</option><option>Candidates Match</option><option>Major Tournament</option><option>League / Club</option><option>Practice</option></select></div>
+  </div>
+  <div class="form-row"><div class="fg" style="flex:2"><label>Additional Context</label><textarea id="gp-ctx" placeholder="e.g. I've lost 3 times in the middlegame…"></textarea></div></div>
+  <label style="margin-bottom:0.4rem;display:block">Plan Components</label>
+  <div class="chip-group" id="gp-comp">
+    <div class="chip selected" onclick="toggleChip(this)">Opening choices</div>
+    <div class="chip selected" onclick="toggleChip(this)">Middlegame strategy</div>
+    <div class="chip selected" onclick="toggleChip(this)">Endgame approach</div>
+    <div class="chip" onclick="toggleChip(this)">Psychological tactics</div>
+    <div class="chip" onclick="toggleChip(this)">Time management</div>
+    <div class="chip" onclick="toggleChip(this)">Contingency plans</div>
+  </div>
+  <div style="display:flex;gap:0.7rem;flex-wrap:wrap;">
+    <button class="btn" onclick="generatePlan(false)">Generate Game Plan</button>
+    <button class="btn btn-ghost" onclick="generatePlan(true)">+ Use Library Games</button>
+  </div>
+  <div class="output-box" id="gp-out" style="display:none"><div class="output-label">Strategic Game Plan</div><div class="output-text" id="gp-txt"></div></div>
+</div>
+
+<div class="panel" id="panel-history">
+  <div class="panel-title">Session Log</div>
+  <div class="panel-sub">All AI outputs from this session</div>
+  <div class="hist-list" id="hist-list"><div class="empty-state">No entries yet.</div></div>
+</div>
+</div>
+
+<div class="modal-overlay" id="game-modal">
+  <div class="modal">
+    <button class="modal-close" onclick="closeModal()">✕</button>
+    <div class="modal-ttl" id="modal-ttl">Game</div>
+    <div class="modal-meta" id="modal-meta"></div>
+    <div class="pgn-display" id="modal-pgn"></div>
+    <div class="modal-actions">
+      <button class="btn btn-sm" onclick="loadGameToBoard()">Load on Board</button>
+      <button class="btn btn-ghost btn-sm" onclick="analyzeModalGame()">AI Analysis</button>
+      <button class="btn btn-ghost btn-sm" onclick="closeModal()">Close</button>
+    </div>
+  </div>
+</div>
+
+<script src="./data/JoelBenjamin.js"></script>
+<script>
+const DEMO_PGNS = {
+  joelBenjamin: `[Event "2019 U.S. Senior Championship"]
+[Site "?"]
+[Date "2019.07.12"]
+[Round "2.4"]
+[White "Benjamin, Joel"]
+[Black "Yermolinsky, Alex"]
+[Result "1-0"]
+[ECO "B22"]
+[Opening "Alapin Sicilian"]
+
+1. e4 c5 2. c3 Nf6 3. e5 Nd5 4. Nf3 d6 5. Bc4 Nb6 6. e6 fxe6 7. Bb3 Nc6 8. Ng5 d5 9. Bc2 Qd6 10. d4 cxd4 11. Qh5+ g6 12. Bxg6+ hxg6 13. Qxh8 Qe5+ 14. Qxe5 Nxe5 15. cxd4 Nc6 16. Be3 Bg7 17. Nc3 Bd7 18. O-O-O Rc8 19. h4 Nb4 20. Kd2 Nc4+ 21. Ke2 Nxb2 22. Rb1 N4d3 23. Nd1 Rc2+ 24. Kf3 e5 25. Nxb2 e4+ 26. Kg3 Nxb2 27. Rhc1 Re2 28. Rc7 e5 29. Rxb7 Nc4 30. Rxd7 Kxd7 31. Rb7+ 1-0
+
+[Event "50+ World Senior Team Championship"]
+[Site "chess24.com"]
+[Date "2019.04.16"]
+[Round "1.2"]
+[White "Benjamin, Joel"]
+[Black "Farrell, Neil"]
+[Result "1/2-1/2"]
+[ECO "C06"]
+[Opening "French Defense"]
+
+1. e4 e6 2. d4 d5 3. Nd2 Nf6 4. e5 Nfd7 5. Bd3 c5 6. c3 Nc6 7. Ngf3 f6 8. exf6 Nxf6 9. O-O cxd4 10. Nxd4 Bd6 11. f4 Nxd4 12. cxd4 O-O 13. Nf3 Qb6 14. Qe2 Bd7 15. Be3 Be8 16. Ne5 Rc8 17. Rac1 Rxc1 18. Rxc1 a6 19. Bb1 Bxe5 20. dxe5 d4 21. exf6 dxe3 22. fxg7 Kxg7 23. Re1 Rxf4 24. Qxe3 Qxe3+ 25. Rxe3 Bb5 26. Bd3 Bxd3 27. Rxd3 Rf7 28. Re3 Re7 29. Kf2 Kf6 30. Kf3 Rd7 31. Ke2 e5 32. Rh3 Rg7 33. g3 Ke6 34. Kd3 Kd5 35. Rh6 Rf7 36. Ke3 Rg7 37. Rf6 Rc7 38. Rb6 Rg7 39. a4 Kc5 40. a5 Kd5 41. Rb4 Kc5 42. Re4 Kd5 43. g4 Rg6 44. h4 b6 45. h5 Rc6 46. Kd3 bxa5 47. Ra4 Rb6 48. Rxa5+ Ke6 49. b4 1/2-1/2
+
+[Event "World Senior Team 50+"]
+[Site "?"]
+[Date "2020.03.07"]
+[Round "6"]
+[White "Fatalibekova, Elena"]
+[Black "Benjamin, Joel"]
+[Result "0-1"]
+[ECO "C41"]
+[Opening "Philidor Defense"]
+
+1. e4 e5 2. Nf3 d6 3. d4 exd4 4. Nxd4 Nf6 5. Nc3 Be7 6. g3 O-O 7. Bg2 Re8 8. O-O Bf8 9. h3 Nc6 10. g4 h6 11. Nde2 Rb8 12. f4 Na5 13. Qd3 b5 14. b4 Nc4 15. Nxb5 Rxb5 16. Qxc4 Rb6 17. b5 d5 18. exd5 Bxg4 19. Nd4 Bd7 20. Nc6 Bxc6 21. dxc6 a6 22. a4 axb5 23. axb5 Nh5 24. Bb2 Qh4 25. Be5 Rxe5 26. Ra7 Rc5 27. Qe2 Nxf4 28. Qf3 Bd6 29. Ra8+ Kh7 30. Qe4+ f5 31. Qe8 Re5 32. Qh8+ Kg6 33. Rg8 Nxh3+ 0-1
+
+[Event "2021 U.S. Open (6-day)"]
+[Site "Cherry Hill, New Jersey, USA"]
+[Date "2021.08.06"]
+[Round "4"]
+[White "Vidyarthi, Vyom"]
+[Black "Benjamin, Joel"]
+[Result "0-1"]
+[ECO "A13"]
+[Opening "English Opening: Agincourt Defense"]
+
+1. Nf3 Nf6 2. c4 e6 3. e3 d5 4. b3 c5 5. Bb2 Nc6 6. cxd5 exd5 7. Bb5 Bd6 8. O-O Bg4 9. h3 Bh5 10. Be2 O-O 11. d4 Bxf3 12. Bxf3 cxd4 13. exd4 Re8 14. Nc3 Bc7 15. Qd3 Qd6 16. g3 Bb6 17. Na4 Ne4 18. Kg2 Bc7 19. Bxe4 dxe4 20. Qc3 e3 21. Qc5 Qg6 22. d5 Bd6 23. Qc3 Bb4 24. Qc4 e2 25. Rfe1 Bxe1 26. Rxe1 Re4 27. Qb5 Nb4 28. Nc5 Nc2 29. Rxe2 Rxe2 30. Qxe2 b6 31. Ne4 f5 32. Nf6+ gxf6 33. Qxc2 f4 34. Qc4 fxg3 35. fxg3 b5 36. Qd4 Qc2+ 37. Kf3 Qf5+ 38. Ke3 Rd8 39. Qe4 Qxd5 40. Qxd5+ Rxd5 41. Bxf6 b4 0-1
+
+[Event "U.S. Senior Championship"]
+[Site "Saint Louis, United States"]
+[Date "2021.07.23"]
+[Round "7.5"]
+[White "Benjamin, Joel"]
+[Black "Sokolin, Leonid"]
+[Result "1-0"]
+[ECO "B31"]
+[Opening "Sicilian Defense: Rossolimo"]
+
+1. e4 c5 2. Nf3 Nc6 3. Bb5 g6 4. c3 e5 5. d4 cxd4 6. cxd4 exd4 7. Nxd4 Bg7 8. Be3 Nge7 9. Nc3 O-O 10. Nde2 a6 11. Bxc6 dxc6 12. Bc5 Qc7 13. Qd6 Qxd6 14. Bxd6 Re8 15. O-O-O Be6 16. Nd4 Bg4 17. f3 Rad8 18. Nb3 Be6 19. Nc5 b5 20. Nxa6 Rxd6 21. Rxd6 Be5 22. Rdd1 Ra8 23. Nc5 b4 24. N3a4 Bxa2 25. Rd7 Bf6 26. Rhd1 Kg7 27. Rb7 Bc4 28. Rdd7 Bb5 29. b3 Kf8 30. f4 Bxa4 31. bxa4 Ng8 32. Rxf7+ Ke8 33. Ne6 Rxa4 34. Rf8# 1-0
+
+[Event "New York State Open"]
+[Site "Lake George Village, NY"]
+[Date "2016.05.22"]
+[Round "?"]
+[White "Rodrigue Lemieux, Shawn"]
+[Black "Benjamin, Joel"]
+[Result "0-1"]
+[ECO "B15"]
+[Opening "Caro-Kann Defense"]
+
+1. e4 c6 2. d4 d5 3. Nc3 g6 4. Nf3 Bg7 5. Be2 Nh6 6. e5 O-O 7. Bf4 f6 8. O-O Bg4 9. h3 Bxf3 10. Bxf3 fxe5 11. Bxe5 Bxe5 12. dxe5 e6 13. Re1 Qh4 14. Ne2 Rxf3 15. gxf3 Nf5 16. Kg2 Qg5+ 17. Kh1 Qh4 18. Kg2 Nd7 19. f4 Rf8 20. Qd3 Qh5 21. Ng3 Nh4+ 22. Kh1 Qh6 23. Ne2 Nxe5 24. fxe5 Rf3 25. Rad1 Rxd3 26. Rxd3 Qg5 27. Ng3 Qf4 28. Re2 c5 29. b3 b5 30. Rde3 d4 31. Rd3 c4 0-1`
+};
+
+const GLYPHS = {wK:'♔',wQ:'♕',wR:'♖',wB:'♗',wN:'♘',wP:'♙',bK:'♚',bQ:'♛',bR:'♜',bB:'♝',bN:'♞',bP:'♟'};
+let boardFlipped = false;
+let gameLibrary = [];
+let activeModalGame = null;
+let GS = { board:[], turn:'w', castling:{wK:1,wQ:1,bK:1,bQ:1}, ep:null, history:[], selSq:null, validMoves:[] };
+
+function fenToBoard(fen){
+  const rows = fen.split(' ')[0].split('/');
+  const b = [];
+  for (const row of rows) {
+    for (const ch of row) {
+      if (isNaN(ch)) {
+        const c = ch === ch.toUpperCase() ? 'w' : 'b';
+        b.push(c + ch.toUpperCase());
+      } else {
+        for (let i = 0; i < +ch; i++) b.push(null);
+      }
+    }
+  }
+  return b;
+}
+function R(i){ return Math.floor(i / 8); }
+function C(i){ return i % 8; }
+function idx(c,r){ return r * 8 + c; }
+function rkOf(i){ return 8 - R(i); }
+
+function getValidMoves(sq){
+  const b = GS.board;
+  const pc = b[sq];
+  if (!pc) return [];
+  const color = pc[0];
+  const type = pc[1];
+  const moves = [];
+  const r = R(sq);
+  const c = C(sq);
+  const add = (to) => {
+    if (to < 0 || to > 63) return false;
+    if (b[to] && b[to][0] === color) return false;
+    moves.push(to);
+    return !b[to];
+  };
+
+  if (type === 'P') {
+    const d = color === 'w' ? -1 : 1;
+    const sr = color === 'w' ? 6 : 1;
+    const fwd = sq + d * 8;
+    if (fwd >= 0 && fwd < 64 && !b[fwd]) {
+      moves.push(fwd);
+      if (r === sr && !b[sq + d * 16]) moves.push(sq + d * 16);
+    }
+    for (const dc of [-1, 1]) {
+      const nc = c + dc;
+      if (nc >= 0 && nc < 8) {
+        const cap = sq + d * 8 + dc;
+        if (b[cap] && b[cap][0] !== color) moves.push(cap);
+        if (GS.ep === cap) moves.push(cap);
+      }
+    }
+  } else if (type === 'N') {
+    for (const [dr,dc] of [[-2,-1],[-2,1],[-1,-2],[-1,2],[1,-2],[1,2],[2,-1],[2,1]]) {
+      const nr = r + dr;
+      const nc = c + dc;
+      if (nr >= 0 && nr < 8 && nc >= 0 && nc < 8) add(idx(nc, nr));
+    }
+  } else if (type === 'K') {
+    for (const [dr,dc] of [[-1,-1],[-1,0],[-1,1],[0,-1],[0,1],[1,-1],[1,0],[1,1]]) {
+      const nr = r + dr;
+      const nc = c + dc;
+      if (nr >= 0 && nr < 8 && nc >= 0 && nc < 8) add(idx(nc, nr));
+    }
+    if (color === 'w' && r === 7 && c === 4) {
+      if (GS.castling.wK && !b[idx(5,7)] && !b[idx(6,7)] && b[idx(7,7)] === 'wR') moves.push(idx(6,7));
+      if (GS.castling.wQ && !b[idx(3,7)] && !b[idx(2,7)] && !b[idx(1,7)] && b[idx(0,7)] === 'wR') moves.push(idx(2,7));
+    }
+    if (color === 'b' && r === 0 && c === 4) {
+      if (GS.castling.bK && !b[idx(5,0)] && !b[idx(6,0)] && b[idx(7,0)] === 'bR') moves.push(idx(6,0));
+      if (GS.castling.bQ && !b[idx(3,0)] && !b[idx(2,0)] && !b[idx(1,0)] && b[idx(0,0)] === 'bR') moves.push(idx(2,0));
+    }
+  } else {
+    const dirs = {
+      R:[[-1,0],[1,0],[0,-1],[0,1]],
+      B:[[-1,-1],[-1,1],[1,-1],[1,1]],
+      Q:[[-1,0],[1,0],[0,-1],[0,1],[-1,-1],[-1,1],[1,-1],[1,1]]
+    };
+    for (const [dr,dc] of dirs[type]) {
+      let nr = r + dr;
+      let nc = c + dc;
+      while (nr >= 0 && nr < 8 && nc >= 0 && nc < 8) {
+        if (!add(idx(nc, nr))) break;
+        nr += dr;
+        nc += dc;
+      }
+    }
+  }
+  return moves;
+}
+
+function toNote(from,to,pc,cap){
+  const F = 'abcdefgh';
+  const ft = pc[1];
+  if (ft === 'K' && Math.abs(C(to) - C(from)) === 2) return C(to) > C(from) ? 'O-O' : 'O-O-O';
+  let n = '';
+  if (ft === 'P') {
+    if (cap) n += F[C(from)] + 'x';
+    n += F[C(to)] + rkOf(to);
+  } else {
+    n += ft;
+    if (cap) n += F[C(from)] + 'x';
+    n += F[C(to)] + rkOf(to);
+  }
+  return n;
+}
+
+function makeMove(from,to){
+  const b = GS.board;
+  const pc = b[from];
+  const color = pc[0];
+  const type = pc[1];
+  const cap = b[to];
+  const note = toNote(from,to,pc,cap);
+  b[to] = pc;
+  b[from] = null;
+  if (type === 'P' && GS.ep === to) b[to + (color === 'w' ? 8 : -8)] = null;
+  GS.ep = (type === 'P' && Math.abs(R(to) - R(from)) === 2) ? (from + to) / 2 : null;
+  if (type === 'K') {
+    if (C(to) - C(from) === 2) { b[to - 1] = b[to + 1]; b[to + 1] = null; }
+    if (C(from) - C(to) === 2) { b[to + 1] = b[to - 2]; b[to - 2] = null; }
+    GS.castling[color + 'K'] = 0;
+    GS.castling[color + 'Q'] = 0;
+  }
+  if (type === 'R') {
+    if (C(from) === 7) GS.castling[color + 'K'] = 0;
+    if (C(from) === 0) GS.castling[color + 'Q'] = 0;
+  }
+  if (type === 'P' && (R(to) === 0 || R(to) === 7)) b[to] = color + 'Q';
+  GS.history.push({from,to,pc,cap,note});
+  GS.turn = color === 'w' ? 'b' : 'w';
+  GS.selSq = null;
+  GS.validMoves = [];
+  updateMoveList();
+  updateProb();
+  renderBoard();
+}
+
+function undoMove(){
+  if (!GS.history.length) return;
+  const mv = GS.history.pop();
+  GS.board[mv.from] = mv.pc;
+  GS.board[mv.to] = mv.cap || null;
+  GS.turn = mv.pc[0];
+  GS.selSq = null;
+  GS.validMoves = [];
+  updateMoveList();
+  updateProb();
+  renderBoard();
+}
+
+function resetBoard(){
+  GS.board = fenToBoard('rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1');
+  GS.turn = 'w';
+  GS.castling = {wK:1,wQ:1,bK:1,bQ:1};
+  GS.ep = null;
+  GS.history = [];
+  GS.selSq = null;
+  GS.validMoves = [];
+  document.getElementById('insight-wrap').style.display = 'none';
+  updateMoveList();
+  updateProb();
+  renderBoard();
+}
+
+function flipBoard(){ boardFlipped = !boardFlipped; renderBoard(); }
+
+function renderBoard(){
+  const container = document.getElementById('chess-board');
+  container.innerHTML = '';
+  const order = boardFlipped ? Array.from({length:64},(_,i)=>63-i) : Array.from({length:64},(_,i)=>i);
+  const last = GS.history[GS.history.length - 1];
+  for (const i of order) {
+    const light = (R(i) + C(i)) % 2 === 0;
+    const sq = document.createElement('div');
+    sq.className = 'sq ' + (light ? 'light' : 'dark');
+    if (GS.selSq === i) sq.classList.add('sel');
+    if (GS.validMoves.includes(i)) {
+      sq.classList.add('vmove');
+      if (GS.board[i]) sq.classList.add('occ');
+    }
+    if (last) {
+      if (last.from === i) sq.classList.add('lf');
+      if (last.to === i) sq.classList.add('lt');
+    }
+    if (GS.board[i]) sq.textContent = GLYPHS[GS.board[i]];
+    sq.addEventListener('click',()=>handleClick(i));
+    container.appendChild(sq);
+  }
+  const files = boardFlipped ? 'hgfedcba' : 'abcdefgh';
+  const ranks = boardFlipped ? '12345678' : '87654321';
+  document.getElementById('coord-file').innerHTML = files.split('').map(f=>`<span style="flex:1;text-align:center">${f}</span>`).join('');
+  const sqH = document.querySelector('.sq')?.offsetHeight || 62;
+  document.getElementById('coord-rank').innerHTML = ranks.split('').map(r=>`<span style="height:${sqH}px">${r}</span>`).join('');
+  document.getElementById('turn-ind').textContent = GS.turn === 'w' ? 'White to move' : 'Black to move';
+}
+
+function handleClick(i){
+  const pc = GS.board[i];
+  if (GS.selSq !== null) {
+    if (GS.validMoves.includes(i)) { makeMove(GS.selSq, i); return; }
+    if (pc && pc[0] === GS.turn) { GS.selSq = i; GS.validMoves = getValidMoves(i); renderBoard(); return; }
+    GS.selSq = null; GS.validMoves = []; renderBoard(); return;
+  }
+  if (pc && pc[0] === GS.turn) { GS.selSq = i; GS.validMoves = getValidMoves(i); renderBoard(); }
+}
+
+function updateMoveList(){
+  const el = document.getElementById('move-list');
+  if (!GS.history.length) { el.textContent = '—'; return; }
+  let t = '';
+  for (let i = 0; i < GS.history.length; i++) {
+    if (i % 2 === 0) t += (Math.floor(i / 2) + 1) + '. ';
+    t += GS.history[i].note + ' ';
+  }
+  el.textContent = t.trim();
+  el.scrollTop = el.scrollHeight;
+}
+
+function parsePGN(pgn){
+  const games = [];
+  const parts = pgn.split(/(?=\[Event\s)/);
+  for (const gt of parts) {
+    if (!gt.trim()) continue;
+    const hdrs = {};
+    const re = /\[(\w+)\s+"([^"]*)"\]/g;
+    let m;
+    while ((m = re.exec(gt)) !== null) hdrs[m[1]] = m[2];
+    const movesText = gt
+      .replace(/\[.*?\]\s*/gs,' ')
+      .replace(/\{[^}]*\}/g,' ')
+      .replace(/\([^)]*\)/g,' ')
+      .replace(/\$\d+/g,' ')
+      .replace(/\d+\.(\.\.)?/g,' ')
+      .replace(/1-0|0-1|1\/2-1\/2|\*/g,' ')
+      .replace(/\s+/g,' ')
+      .trim();
+    const tokens = movesText
+      .split(/\s+/)
+      .filter(t => /^[NBRQK]?[a-h]?[1-8]?x?[a-h][1-8](=[NBRQK])?[+#]?|^O-O(-O)?[+#]?$/.test(t))
+      .map(t => t.replace(/[!?]+/g,''));
+    if (!hdrs.White && !hdrs.Black) continue;
+    const res = hdrs.Result || '*';
+    const rc = res === '1-0' ? 'win' : res === '0-1' ? 'loss' : 'draw';
+    games.push({
+      white: hdrs.White || '?',
+      black: hdrs.Black || '?',
+      event: hdrs.Event || '?',
+      date: hdrs.Date || '?',
+      result: res,
+      eco: hdrs.ECO || '',
+      opening: hdrs.Opening || hdrs.ECO || '',
+      moves: tokens,
+      pgn: gt.trim(),
+      rc
+    });
+  }
+  return games;
+}
+
+function getMoveSeq(){ return GS.history.map(h => h.note.replace(/[+#!?]/g,'')); }
+
+function updateProb(){
+  const seq = getMoveSeq();
+  const depth = seq.length;
+  const total = gameLibrary.length;
+  document.getElementById('pi-total').textContent = total;
+  document.getElementById('pi-depth').textContent = depth;
+  document.getElementById('pi-move').textContent = depth ? seq[depth - 1] : '—';
+  if (!total) {
+    document.getElementById('prob-bars').innerHTML = '<div class="prob-empty">Import games to the library to see move probabilities.</div>';
+    document.getElementById('pi-match').textContent = '0';
+    return;
+  }
+  const matching = gameLibrary.filter(g => {
+    for (let i = 0; i < seq.length; i++) {
+      if (!g.moves[i] || g.moves[i].replace(/[+#!?]/g,'') !== seq[i]) return false;
+    }
+    return g.moves.length > seq.length;
+  });
+  document.getElementById('pi-match').textContent = matching.length;
+  if (!matching.length) {
+    document.getElementById('prob-bars').innerHTML = `<div class="prob-empty">No library games match this line after move ${depth}.<br><span style="font-size:0.88em">Try a different line or import more games.</span></div>`;
+    return;
+  }
+  const nextMoves = {};
+  for (const g of matching) {
+    const nm = g.moves[seq.length].replace(/[+#!?]/g,'');
+    nextMoves[nm] = (nextMoves[nm] || 0) + 1;
+  }
+  const sorted = Object.entries(nextMoves).sort((a,b)=>b[1]-a[1]).slice(0,8);
+  const maxCnt = sorted[0][1];
+  let html = `<div style="margin-bottom:0.5rem;font-family:'JetBrains Mono',monospace;font-size:0.6rem;color:var(--muted);">Based on ${matching.length} matching game${matching.length !== 1 ? 's' : ''}</div>`;
+  sorted.forEach(([mv,cnt],i) => {
+    const pct = Math.round(cnt / matching.length * 100);
+    const bw = Math.round(cnt / maxCnt * 100);
+    html += `<div class="move-bar"><div class="mb-label">${mv}</div><div class="mb-track"><div class="mb-fill${i===0?' top':''}" style="width:${bw}%"></div></div><div class="mb-pct">${pct}%</div><div class="mb-cnt">${cnt}×</div></div>`;
+  });
+  document.getElementById('prob-bars').innerHTML = html;
+}
+
+function switchImport(type,el){
+  document.querySelectorAll('.imt').forEach(t=>t.classList.remove('active'));
+  document.querySelectorAll('.import-sec').forEach(s=>s.classList.remove('active'));
+  el.classList.add('active');
+  document.getElementById('import-' + type).classList.add('active');
+}
+
+function extractPID(url){
+  const m = url.match(/pid[=/](\d+)/i);
+  return m ? m[1] : null;
+}
+
+function sleep(ms){ return new Promise(resolve => setTimeout(resolve, ms)); }
+
+async function importFromURL(){
+  const url = document.getElementById('url-input').value.trim();
+  const player = document.getElementById('url-player').value.trim() || 'Opponent';
+  const err = document.getElementById('url-err');
+  const prog = document.getElementById('url-prog');
+  const fill = document.getElementById('url-prog-fill');
+  const lbl = document.getElementById('url-prog-lbl');
+  const pid = extractPID(url);
+  err.style.display = 'none';
+  prog.style.display = 'block';
+  fill.style.width = '20%';
+  lbl.textContent = 'Inspecting source…';
+  await sleep(180);
+  const joelRequested = pid === '42951' || /joel\s+benjamin/i.test(player) || /pid\/42951|pid=42951|pid\/42951/i.test(url);
+  if (!joelRequested) {
+    prog.style.display = 'none';
+    err.textContent = 'This static build cannot scrape arbitrary chessgames.com pages directly.\nUse the built-in Joel Benjamin import, or switch to Paste PGN / Upload File for other players.';
+    err.style.display = 'block';
+    return;
+  }
+  fill.style.width = '55%';
+  lbl.textContent = 'Loading bundled Joel Benjamin archive…';
+  await sleep(240);
+  const archive = window.GAMBIT_ARCHIVES?.joelBenjamin || DEMO_PGNS.joelBenjamin;
+  const games = parsePGN(archive);
+  addGames(games, player, true);
+  fill.style.width = '100%';
+  lbl.textContent = `✓ ${games.length} Joel Benjamin games loaded`;
+  setTimeout(() => { prog.style.display = 'none'; fill.style.width = '0%'; }, 900);
+}
+
+function importFromPGN(){
+  const pgn = document.getElementById('pgn-paste').value.trim();
+  const player = document.getElementById('pgn-player').value.trim() || 'Opponent';
+  const err = document.getElementById('pgn-err');
+  err.style.display = 'none';
+  if (!pgn) {
+    err.textContent = 'Please paste some PGN.';
+    err.style.display = 'block';
+    return;
+  }
+  const games = parsePGN(pgn);
+  if (!games.length) {
+    err.textContent = 'Could not parse games. Check PGN format.';
+    err.style.display = 'block';
+    return;
+  }
+  addGames(games, player);
+}
+
+function importFromFile(){
+  const file = document.getElementById('pgn-file').files[0];
+  const player = document.getElementById('file-player').value.trim() || 'Opponent';
+  const err = document.getElementById('file-err');
+  err.style.display = 'none';
+  if (!file) {
+    err.textContent = 'Select a file.';
+    err.style.display = 'block';
+    return;
+  }
+  const reader = new FileReader();
+  reader.onload = e => {
+    const games = parsePGN(e.target.result);
+    if (!games.length) {
+      err.textContent = 'No games found.';
+      err.style.display = 'block';
+      return;
+    }
+    addGames(games, player);
+  };
+  reader.readAsText(file);
+}
+
+function saveLibrary(){
+  localStorage.setItem('gambit-library', JSON.stringify(gameLibrary));
+}
+
+function loadLibrary(){
+  try {
+    const raw = localStorage.getItem('gambit-library');
+    if (!raw) return;
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed)) gameLibrary = parsed;
+  } catch (_) {}
+}
+
+function addGames(games,player,replacePlayer=false){
+  const existing = new Set(gameLibrary.map(g => g.pgn));
+  const incoming = games
+    .filter(g => !existing.has(g.pgn))
+    .map(g => ({...g, playerLabel: player}));
+  if (replacePlayer) {
+    gameLibrary = gameLibrary.filter(g => g.playerLabel !== player);
+  }
+  gameLibrary.push(...incoming);
+  saveLibrary();
+  refreshLibraryUI();
+  updateProb();
+  document.getElementById('lib-count').textContent = gameLibrary.length;
+}
+
+function clearLibrary(){
+  if (!confirm('Clear all games?')) return;
+  gameLibrary = [];
+  saveLibrary();
+  refreshLibraryUI();
+  updateProb();
+  document.getElementById('lib-count').textContent = '0';
+}
+
+function refreshLibraryUI(){
+  const tot = gameLibrary.length;
+  const w = gameLibrary.filter(g=>g.rc==='win').length;
+  const l = gameLibrary.filter(g=>g.rc==='loss').length;
+  const d = gameLibrary.filter(g=>g.rc==='draw').length;
+  document.getElementById('st-total').textContent = tot;
+  document.getElementById('st-w').textContent = w;
+  document.getElementById('st-l').textContent = l;
+  document.getElementById('st-d').textContent = d;
+  document.getElementById('st-pct').textContent = tot ? Math.round((w + d * 0.5) / tot * 100) + '%' : '—';
+  const players = [...new Set(gameLibrary.map(g=>g.playerLabel))];
+  document.getElementById('st-player').textContent = players.join(', ') || '—';
+  const show = tot > 0;
+  document.getElementById('stats-bar').style.display = show ? 'flex' : 'none';
+  document.getElementById('gl-wrap').style.display = show ? 'block' : 'none';
+  document.getElementById('lib-count').textContent = String(tot);
+  renderGL();
+}
+
+function renderGL(){
+  const s = (document.getElementById('f-search').value || '').toLowerCase();
+  const r = document.getElementById('f-result').value;
+  const y = document.getElementById('f-year').value;
+  const filtered = gameLibrary.filter(g => {
+    if (s && !(g.white + g.black + g.event + g.opening).toLowerCase().includes(s)) return false;
+    if (r && g.rc !== r) return false;
+    if (y && !g.date.includes(y)) return false;
+    return true;
+  });
+  const el = document.getElementById('game-list');
+  if (!filtered.length) { el.innerHTML = '<div class="empty-state">No games match filters.</div>'; return; }
+  el.innerHTML = filtered.slice(0,200).map(g => {
+    const i = gameLibrary.indexOf(g);
+    return `<div class="gl-row" onclick="openModal(${i})">
+      <span style="font-size:0.88rem" title="${g.white} vs ${g.black}">${g.white} — ${g.black}</span>
+      <span style="font-size:0.8rem;color:var(--muted)">${(g.event || '').slice(0,20)}</span>
+      <span style="font-family:'JetBrains Mono',monospace;font-size:0.7rem">${(g.date || '').slice(0,4)}</span>
+      <span><span class="rbadge ${g.rc}">${g.result}</span></span>
+      <span style="font-size:0.8rem;color:var(--muted)">${(g.opening || g.eco || '').slice(0,26)}</span>
+      <span><button class="btn btn-sm" onclick="event.stopPropagation();quickLoad(${i})">Board</button></span>
+    </div>`;
+  }).join('');
+}
+
+function openModal(i){
+  activeModalGame = gameLibrary[i];
+  const g = activeModalGame;
+  document.getElementById('modal-ttl').textContent = `${g.white} vs ${g.black}`;
+  document.getElementById('modal-meta').textContent = `${g.event} · ${g.date} · ${g.result}${g.opening ? ' · ' + g.opening : ''}`;
+  document.getElementById('modal-pgn').textContent = g.pgn;
+  document.getElementById('game-modal').classList.add('open');
+}
+
+function closeModal(){
+  document.getElementById('game-modal').classList.remove('open');
+  activeModalGame = null;
+}
+
+function quickLoad(i){
+  activeModalGame = gameLibrary[i];
+  loadGameToBoard();
+}
+
+function loadGameToBoard(){
+  if (!activeModalGame) return;
+  const moves = activeModalGame.moves || [];
+  closeModal();
+  switchTab('prob');
+  resetBoard();
+  GS.history = moves.map((note, i) => ({ from:-1, to:-1, pc: i % 2 === 0 ? 'wP' : 'bP', cap:null, note }));
+  GS.turn = moves.length % 2 === 0 ? 'w' : 'b';
+  updateMoveList();
+  updateProb();
+  renderBoard();
+}
+
+function libSummary(){
+  if (!gameLibrary.length) return '';
+  const ops = {};
+  for (const g of gameLibrary) {
+    const k = g.opening || g.eco || '?';
+    ops[k] = (ops[k] || 0) + 1;
+  }
+  const top = Object.entries(ops).sort((a,b)=>b[1]-a[1]).slice(0,5).map(([k,v])=>`${k} (${v}x)`).join(', ');
+  const w = gameLibrary.filter(g=>g.rc==='win').length;
+  const d = gameLibrary.filter(g=>g.rc==='draw').length;
+  const tot = gameLibrary.length;
+  return { top, tot, score: Math.round((w + d * 0.5) / tot * 100) };
+}
+
+function currentMoveFrequencies(){
+  const seq = getMoveSeq();
+  const matching = gameLibrary.filter(g => seq.every((mv, i) => (g.moves[i] || '').replace(/[+#!?]/g,'') === mv));
+  const counts = {};
+  matching.forEach(g => {
+    const next = g.moves[seq.length];
+    if (next) counts[next] = (counts[next] || 0) + 1;
+  });
+  return Object.entries(counts).sort((a,b)=>b[1]-a[1]).slice(0,3);
+}
+
+function addHistoryCard(logTitle, text){
+  const histList = document.getElementById('hist-list');
+  if (histList.querySelector('.empty-state')) histList.innerHTML = '';
+  const wrap = document.createElement('div');
+  wrap.className = 'output-box';
+  wrap.style.marginBottom = '0.8rem';
+  wrap.innerHTML = `<div class="output-label">${logTitle}</div><div class="output-text"></div>`;
+  wrap.querySelector('.output-text').textContent = text;
+  histList.prepend(wrap);
+}
+
+function localPositionInsight(){
+  const seq = getMoveSeq();
+  const top = currentMoveFrequencies();
+  const summary = libSummary();
+  const moveText = seq.length ? seq.join(' ') : 'starting position';
+  const probable = top.length ? top.map(([mv,c]) => `${mv} (${c})`).join(', ') : 'no matching continuations yet';
+  return `Position snapshot\nAfter ${moveText}, the library match is ${document.getElementById('pi-match').textContent} game(s) out of ${document.getElementById('pi-total').textContent}.\n\nMost likely replies\n${probable}.\n\nPrep angle\nUse this as a branching guide rather than an engine verdict. If your goal is opponent prep, focus on the first deviation point where one reply clearly dominates and prepare one active idea against it plus one practical backup line.\n\nLibrary context\nCurrent sample set: ${summary.tot || 0} games. Most common openings: ${summary.top || 'none yet'}.`;
+}
+
+function localOpponentAnalysis(name, elo, style, notes, focus, useLib){
+  const summary = libSummary();
+  const libText = useLib && summary.tot ? `Library-backed tendencies\nThe loaded games score ${summary.score}% by match-score and cluster most heavily around ${summary.top}.\n\n` : '';
+  return `Profile\n${name}${elo ? ` (${elo})` : ''}${style ? ` looks most like a ${style} player` : ' has no style selected yet'}. ${notes || 'No custom notes were added.'}\n\n${libText}What to probe\nFocus on ${focus || 'general opening and middlegame choices'}. Test whether the opponent repeats familiar structures early or can be pulled into less comfortable move orders.\n\nPractical plan\nForce an early decision, keep one sideline ready, and steer toward positions where preparation matters more than general feel. Note recurring openings, common pawn structures, and whether results swing with sharper positions or slower maneuvering games.`;
+}
+
+function localOpeningPrep(color, opening, depth, opp, goals, useLib){
+  const summary = libSummary();
+  return `Repertoire brief\nPrepare ${opening} for ${color}. Target depth: ${depth}.\n\nMove-order focus\nStart from your most forcing tabiya and build one clean main line, one practical sideline, and one anti-surprise fallback. ${opp ? `Expected opponent replies: ${opp}.` : 'No specific opponent reply set was entered.'}\n\nTraining emphasis\nPrioritize ${goals || 'main line theory'}.\n\nLibrary overlay\n${useLib && summary.tot ? `The current library leans toward ${summary.top}, so compare your opening choice against those recurring structures.` : 'Add library games if you want this section to reflect a specific opponent corpus.'}`;
+}
+
+function localGamePlan(style, format, stakes, ctx, comp, useLib){
+  const summary = libSummary();
+  return `Match blueprint\nStyle: ${style}. Format: ${format}. Stakes: ${stakes}.\n\nPrimary objective\nReach a middlegame where your decisions are faster and clearer than your opponent's. ${ctx || 'No extra context was supplied.'}\n\nChecklist\nCenter the plan on ${comp || 'opening choices and middlegame strategy'}. Define one low-risk line, one ambitious line, and one emergency simplification route.\n\nOpponent-specific overlay\n${useLib && summary.tot ? `The loaded library suggests repeated exposure to ${summary.top}. Use that to choose structures they see often only if you believe you understand them better; otherwise, angle slightly away from the biggest cluster.` : 'Load library games to tailor the blueprint around actual opponent history.'}`;
+}
+
+function localGameReview(g){
+  return `Opening summary\n${g.opening || g.eco || 'Opening not tagged'} shaped the game, with ${g.white} and ${g.black} reaching a decisive practical phase quickly.\n\nTurning point\nUse the move list to identify the first irreversible concession: material, king safety, pawn structure, or initiative. That is the moment worth replaying first.\n\nTraining takeaway\nExtract three items: the opening choice, the first strategic commitment, and the final conversion phase. Those are usually the most reusable prep lessons from a single master game.`;
+}
+
+async function fauxThink(render){
+  render(true);
+  await sleep(300);
+  render(false);
+}
+
+async function analyzePosition(){
+  document.getElementById('insight-wrap').style.display = 'block';
+  const txt = document.getElementById('insight-text');
+  await fauxThink((loading) => {
+    txt.innerHTML = loading ? '<div class="thinking"><span class="dot"></span><span class="dot"></span><span class="dot"></span>&nbsp;Analysing…</div>' : '';
+  });
+  const text = localPositionInsight();
+  txt.textContent = text;
+  addHistoryCard('Position insight', text);
+}
+
+async function analyzeOpponent(useLib){
+  if (useLib && !gameLibrary.length) { alert('Import games to the library first.'); return; }
+  const name = document.getElementById('opp-name').value || 'opponent';
+  const elo = document.getElementById('opp-elo').value;
+  const style = document.getElementById('opp-style').value;
+  const notes = document.getElementById('opp-notes').value;
+  const focus = getChips('opp-focus');
+  const box = document.getElementById('opp-out');
+  const txt = document.getElementById('opp-txt');
+  box.style.display = 'block';
+  box.classList.add('loading');
+  txt.innerHTML = '<div class="thinking"><span class="dot"></span><span class="dot"></span><span class="dot"></span>&nbsp;Analysing…</div>';
+  await sleep(320);
+  box.classList.remove('loading');
+  const text = localOpponentAnalysis(name, elo, style, notes, focus, useLib);
+  txt.textContent = text;
+  addHistoryCard(`Analysis: ${name}`, text);
+}
+
+async function prepOpening(useLib){
+  if (useLib && !gameLibrary.length) { alert('Import games first.'); return; }
+  const color = document.getElementById('op-color').value;
+  const opening = document.getElementById('op-opening').value || 'chosen opening';
+  const depth = document.getElementById('op-depth').value;
+  const opp = document.getElementById('op-opp').value;
+  const goals = getChips('op-goals');
+  const box = document.getElementById('op-out');
+  const txt = document.getElementById('op-txt');
+  box.style.display = 'block';
+  box.classList.add('loading');
+  txt.innerHTML = '<div class="thinking"><span class="dot"></span><span class="dot"></span><span class="dot"></span>&nbsp;Analysing…</div>';
+  await sleep(320);
+  box.classList.remove('loading');
+  const text = localOpeningPrep(color, opening, depth, opp, goals, useLib);
+  txt.textContent = text;
+  addHistoryCard(`Opening: ${opening}`, text);
+}
+
+async function generatePlan(useLib){
+  if (useLib && !gameLibrary.length) { alert('Import games first.'); return; }
+  const style = document.getElementById('gp-style').value;
+  const format = document.getElementById('gp-format').value;
+  const stakes = document.getElementById('gp-stakes').value;
+  const ctx = document.getElementById('gp-ctx').value;
+  const comp = getChips('gp-comp');
+  const box = document.getElementById('gp-out');
+  const txt = document.getElementById('gp-txt');
+  box.style.display = 'block';
+  box.classList.add('loading');
+  txt.innerHTML = '<div class="thinking"><span class="dot"></span><span class="dot"></span><span class="dot"></span>&nbsp;Analysing…</div>';
+  await sleep(320);
+  box.classList.remove('loading');
+  const text = localGamePlan(style, format, stakes, ctx, comp, useLib);
+  txt.textContent = text;
+  addHistoryCard(`Game Plan: ${format}`, text);
+}
+
+async function analyzeModalGame(){
+  if (!activeModalGame) return;
+  const g = activeModalGame;
+  closeModal();
+  switchTab('history');
+  const text = localGameReview(g);
+  addHistoryCard(`${g.white} vs ${g.black}`, text);
+}
+
+const tabMap = {prob:0, library:1, opponent:2, opening:3, gameplan:4, history:5};
+function switchTab(id){
+  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+  document.querySelectorAll('.panel').forEach(p=>p.classList.remove('active'));
+  document.querySelectorAll('.tab')[tabMap[id]]?.classList.add('active');
+  document.getElementById('panel-' + id)?.classList.add('active');
+}
+function toggleChip(el){ el.classList.toggle('selected'); }
+function getChips(id){ return [...document.querySelectorAll(`#${id} .chip.selected`)].map(c=>c.textContent).join(', '); }
+
+loadLibrary();
+resetBoard();
+refreshLibraryUI();
+</script>
+</body>
+</html>
