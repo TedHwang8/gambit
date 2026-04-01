@@ -81,6 +81,9 @@ textarea { resize:vertical; min-height:80px; }
 .sec-title { font-family:'JetBrains Mono',monospace; font-size:0.58rem; letter-spacing:0.1em; text-transform:uppercase; color:var(--muted); margin-bottom:0.6rem; display:flex; align-items:center; gap:0.5rem; }
 .sec-title::after { content:''; flex:1; height:1px; background:var(--border); }
 .prob-empty { background:white; border:1px solid var(--border); padding:1.5rem; text-align:center; color:var(--muted); font-style:italic; font-size:0.92rem; line-height:1.6; }
+.model-box { background:white; border:1px solid var(--gold); padding:1rem 1.1rem; }
+.model-label { font-family:'JetBrains Mono',monospace; font-size:0.56rem; letter-spacing:0.08em; text-transform:uppercase; color:var(--gold); margin-bottom:0.55rem; }
+.model-meta { font-family:'JetBrains Mono',monospace; font-size:0.6rem; color:var(--muted); margin-bottom:0.7rem; line-height:1.6; }
 .move-bar { display:flex; align-items:center; gap:0.7rem; margin-bottom:0.45rem; }
 .mb-label { font-family:'JetBrains Mono',monospace; font-size:0.75rem; color:var(--ink); min-width:68px; font-weight:500; }
 .mb-track { flex:1; height:20px; background:var(--cream); border:1px solid var(--border); overflow:hidden; }
@@ -209,7 +212,13 @@ textarea { resize:vertical; min-height:80px; }
 
     <div class="prob-panel">
       <div>
-        <div class="sec-title">Opponent's likely next move</div>
+        <div class="sec-title">ML next-move model</div>
+        <div id="model-prediction">
+          <div class="prob-empty">Import opponent games in the Game Library tab to train the next-move model.</div>
+        </div>
+      </div>
+      <div>
+        <div class="sec-title">Exact historical matches</div>
         <div id="prob-bars"><div class="prob-empty">Import opponent games in the Game Library tab, then make moves on the board to see their response probabilities.</div></div>
       </div>
       <div>
@@ -521,6 +530,16 @@ let openingPrepFlipped = false;
 let OPGS = createInitialState();
 let openingPrepCursor = 0;
 let GS = { board:[], turn:'w', castling:{wK:1,wQ:1,bK:1,bQ:1}, ep:null, history:[], selSq:null, validMoves:[] };
+const PREDICTOR_WEIGHTS = {
+  exact: 3.2,
+  context3: 2.2,
+  context2: 1.6,
+  context1: 1.15,
+  opening: 0.9,
+  depth: 0.75,
+  firstMove: 0.65,
+  global: 0.35
+};
 
 function fenToBoard(fen){
   const rows = fen.split(' ')[0].split('/');
@@ -890,10 +909,133 @@ function parsePGN(pgn){
 
 function getMoveSeq(){ return GS.history.map(h => h.note.replace(/[+#!?]/g,'')); }
 
+function normalizeMoveToken(move){
+  return (move || '').replace(/[+#!?]/g,'').trim();
+}
+
 function opponentColorCode(){ return prep.myColor === 'w' ? 'b' : 'w'; }
 function colorName(code){ return code === 'w' ? 'White' : 'Black'; }
 function normalizeName(name){ return (name || '').toLowerCase().replace(/[^a-z0-9]+/g,' ').trim(); }
 function currentOpponentName(){ return (prep.opponentName || 'Opponent').trim() || 'Opponent'; }
+function openingFamily(game){ return (game.opening || game.eco || 'Unknown').trim(); }
+function depthBucket(depth){
+  if (depth < 6) return 'opening';
+  if (depth < 18) return 'middlegame';
+  return 'late';
+}
+function seqTail(seq, size){
+  return seq.slice(Math.max(0, seq.length - size)).join('|');
+}
+function incrementCount(map, key, move){
+  if (!key || !move) return;
+  if (!map[key]) map[key] = {};
+  map[key][move] = (map[key][move] || 0) + 1;
+}
+function countTotal(counts){
+  return Object.values(counts || {}).reduce((sum, value) => sum + value, 0);
+}
+function sortCountEntries(counts, limit=8){
+  return Object.entries(counts || {}).sort((a,b) => b[1] - a[1]).slice(0, limit);
+}
+
+function buildNextMoveModel(games){
+  const opponentPlyIndex = opponentColorCode() === 'w' ? 0 : 1;
+  const model = {
+    positions: 0,
+    global: {},
+    byContext1: {},
+    byContext2: {},
+    byContext3: {},
+    byDepth: {},
+    byOpening: {},
+    byFirstMove: {}
+  };
+  games.forEach(game => {
+    const moves = (game.moves || []).map(normalizeMoveToken).filter(Boolean);
+    const firstMove = normalizeMoveToken(moves[opponentPlyIndex] || '');
+    for (let ply = opponentPlyIndex; ply < moves.length; ply += 2) {
+      const nextMove = moves[ply];
+      if (!nextMove) continue;
+      const prefix = moves.slice(0, ply);
+      model.positions += 1;
+      incrementCount(model.global, 'all', nextMove);
+      incrementCount(model.byContext1, seqTail(prefix, 1), nextMove);
+      incrementCount(model.byContext2, seqTail(prefix, 2), nextMove);
+      incrementCount(model.byContext3, seqTail(prefix, 3), nextMove);
+      incrementCount(model.byDepth, `${ply}|${depthBucket(ply)}`, nextMove);
+      incrementCount(model.byOpening, openingFamily(game), nextMove);
+      incrementCount(model.byFirstMove, firstMove, nextMove);
+    }
+  });
+  return model;
+}
+
+function blendMoveScores(model, seq, exactCounts, openingHint, firstMoveHint){
+  const sources = [
+    { key:'exact', counts: exactCounts, weight: PREDICTOR_WEIGHTS.exact },
+    { key:'context3', counts: model.byContext3[seqTail(seq, 3)], weight: PREDICTOR_WEIGHTS.context3 },
+    { key:'context2', counts: model.byContext2[seqTail(seq, 2)], weight: PREDICTOR_WEIGHTS.context2 },
+    { key:'context1', counts: model.byContext1[seqTail(seq, 1)], weight: PREDICTOR_WEIGHTS.context1 },
+    { key:'opening', counts: model.byOpening[openingHint], weight: PREDICTOR_WEIGHTS.opening },
+    { key:'depth', counts: model.byDepth[`${seq.length}|${depthBucket(seq.length)}`], weight: PREDICTOR_WEIGHTS.depth },
+    { key:'firstMove', counts: model.byFirstMove[firstMoveHint], weight: PREDICTOR_WEIGHTS.firstMove },
+    { key:'global', counts: model.global.all, weight: PREDICTOR_WEIGHTS.global }
+  ];
+  const scores = {};
+  const moveSources = {};
+  let evidence = 0;
+  sources.forEach(source => {
+    const total = countTotal(source.counts);
+    if (!total) return;
+    const confidence = Math.min(1, total / 10);
+    evidence += total;
+    Object.entries(source.counts).forEach(([move, count]) => {
+      const contribution = (count / total) * source.weight * confidence;
+      scores[move] = (scores[move] || 0) + contribution;
+      if (!moveSources[move] || moveSources[move].value < contribution) {
+        moveSources[move] = { key: source.key, value: contribution };
+      }
+    });
+  });
+  return { scores, moveSources, evidence };
+}
+
+function exactNextMoveCounts(seq, games){
+  const counts = {};
+  const matching = games.filter(g => {
+    for (let i = 0; i < seq.length; i++) {
+      if (normalizeMoveToken(g.moves[i]) !== seq[i]) return false;
+    }
+    return Boolean(g.moves[seq.length]);
+  });
+  matching.forEach(g => {
+    const next = normalizeMoveToken(g.moves[seq.length]);
+    if (next) counts[next] = (counts[next] || 0) + 1;
+  });
+  return { counts, matching };
+}
+
+function describePredictionSource(sourceKey){
+  const labels = {
+    exact: 'exact line matches',
+    context3: 'last 3 half-moves',
+    context2: 'recent 2 half-moves',
+    context1: 'last half-move',
+    opening: 'opening-family model',
+    depth: 'move-number pattern',
+    firstMove: 'opponent first-move pattern',
+    global: 'overall move tendency'
+  };
+  return labels[sourceKey] || 'trained library model';
+}
+
+function renderMoveBars(sorted, totalValue, maxValue, valueRenderer, countRenderer){
+  return sorted.map(([mv, value], i) => {
+    const pct = valueRenderer(value, totalValue);
+    const bw = Math.round((value / maxValue) * 100);
+    return `<div class="move-bar"><div class="mb-label">${mv}</div><div class="mb-track"><div class="mb-fill${i===0?' top':''}" style="width:${bw}%"></div></div><div class="mb-pct">${pct}%</div><div class="mb-cnt">${countRenderer(mv, value)}</div></div>`;
+  }).join('');
+}
 
 function inferOpponentColor(game, opponentName){
   const target = normalizeName(opponentName || game.playerLabel);
@@ -969,39 +1111,51 @@ function updateProb(){
   const depth = seq.length;
   const scopedGames = relevantGames();
   const total = scopedGames.length;
+  const modelBox = document.getElementById('model-prediction');
+  const exactBox = document.getElementById('prob-bars');
   document.getElementById('pi-total').textContent = total;
   document.getElementById('pi-depth').textContent = depth;
   document.getElementById('pi-move').textContent = depth ? seq[depth - 1] : '—';
   if (!total) {
-    document.getElementById('prob-bars').innerHTML = '<div class="prob-empty">Import games to the library to see move probabilities.</div>';
+    modelBox.innerHTML = '<div class="prob-empty">Import games to the library to train the next-move model.</div>';
+    exactBox.innerHTML = '<div class="prob-empty">Import games to the library to see exact line statistics.</div>';
     document.getElementById('pi-match').textContent = '0';
     return;
   }
-  const matching = scopedGames.filter(g => {
-    for (let i = 0; i < seq.length; i++) {
-      if (!g.moves[i] || g.moves[i].replace(/[+#!?]/g,'') !== seq[i]) return false;
-    }
-    return g.moves.length > seq.length;
-  });
-  document.getElementById('pi-match').textContent = matching.length;
-  if (!matching.length) {
-    document.getElementById('prob-bars').innerHTML = `<div class="prob-empty">No library games match this line after move ${depth}.<br><span style="font-size:0.88em">Try a different line or import more games.</span></div>`;
+  if (GS.turn !== opponentColorCode()) {
+    document.getElementById('pi-match').textContent = '0';
+    modelBox.innerHTML = `<div class="prob-empty">The model predicts when it is ${currentOpponentName()}'s turn.<br><span style="font-size:0.88em">Play your move first, then the forecasted reply appears here.</span></div>`;
+    exactBox.innerHTML = `<div class="prob-empty">Exact match stats also appear only when it is ${currentOpponentName()}'s turn.</div>`;
     return;
   }
-  const nextMoves = {};
-  for (const g of matching) {
-    const nm = g.moves[seq.length].replace(/[+#!?]/g,'');
-    nextMoves[nm] = (nextMoves[nm] || 0) + 1;
+  const { counts: exactCounts, matching } = exactNextMoveCounts(seq, scopedGames);
+  document.getElementById('pi-match').textContent = matching.length;
+  const model = buildNextMoveModel(scopedGames);
+  const openingHint = matching[0] ? openingFamily(matching[0]) : (analyzeLibrary().topOpenings[0]?.[0] || 'Unknown');
+  const opponentPlyIndex = opponentColorCode() === 'w' ? 0 : 1;
+  const firstMoveHint = normalizeMoveToken(seq[opponentPlyIndex] || analyzeLibrary().topFirstMoves[0]?.[0] || '');
+  const blended = blendMoveScores(model, seq, exactCounts, openingHint, firstMoveHint);
+  const sorted = Object.entries(blended.scores).sort((a,b)=>b[1]-a[1]).slice(0,8);
+  if (!sorted.length) {
+    modelBox.innerHTML = `<div class="prob-empty">The library is loaded, but there isn’t enough training data for this position yet.<br><span style="font-size:0.88em">Import more games or rewind to an earlier branch.</span></div>`;
+    exactBox.innerHTML = matching.length
+      ? '<div class="prob-empty">No exact next-move counts available for this branch.</div>'
+      : `<div class="prob-empty">No exact library games match this line after move ${depth}.</div>`;
+    return;
   }
-  const sorted = Object.entries(nextMoves).sort((a,b)=>b[1]-a[1]).slice(0,8);
-  const maxCnt = sorted[0][1];
-  let html = `<div style="margin-bottom:0.5rem;font-family:'JetBrains Mono',monospace;font-size:0.6rem;color:var(--muted);">Based on ${matching.length} matching game${matching.length !== 1 ? 's' : ''}</div>`;
-  sorted.forEach(([mv,cnt],i) => {
-    const pct = Math.round(cnt / matching.length * 100);
-    const bw = Math.round(cnt / maxCnt * 100);
-    html += `<div class="move-bar"><div class="mb-label">${mv}</div><div class="mb-track"><div class="mb-fill${i===0?' top':''}" style="width:${bw}%"></div></div><div class="mb-pct">${pct}%</div><div class="mb-cnt">${cnt}×</div></div>`;
-  });
-  document.getElementById('prob-bars').innerHTML = html;
+  const totalScore = sorted.reduce((sum, [,score]) => sum + score, 0) || 1;
+  const maxScore = sorted[0][1] || 1;
+  const leader = sorted[0][0];
+  const driver = describePredictionSource(blended.moveSources[leader]?.key);
+  modelBox.innerHTML = `<div class="model-box"><div class="model-label">Predictive model output</div><div class="model-meta">Trained on ${model.positions} opponent-to-move positions. Strongest signal right now: ${driver}. This section blends exact line matches with learned context from similar positions, move depth, opening family, and the opponent's first-move habits.</div>${renderMoveBars(sorted, totalScore, maxScore, (value, totalValue) => Math.round(value / totalValue * 100), (mv) => exactCounts[mv] ? `${exactCounts[mv]} exact` : 'model')}</div>`;
+  const exactSorted = sortCountEntries(exactCounts, 8);
+  if (!exactSorted.length) {
+    exactBox.innerHTML = `<div class="prob-empty">No exact library games match this line after move ${depth}.<br><span style="font-size:0.88em">The model above is extrapolating from similar positions instead.</span></div>`;
+    return;
+  }
+  const exactTotal = exactSorted.reduce((sum, [,count]) => sum + count, 0);
+  const exactMax = exactSorted[0][1] || 1;
+  exactBox.innerHTML = `<div class="model-meta">Based on ${matching.length} exact line match${matching.length !== 1 ? 'es' : ''} from the imported library.</div>${renderMoveBars(exactSorted, exactTotal, exactMax, (value, totalValue) => Math.round(value / totalValue * 100), (mv, value) => `${value}x`)}`;
 }
 
 function switchImport(type,el){
@@ -1239,13 +1393,8 @@ function libSummary(){
 
 function currentMoveFrequencies(){
   const seq = getMoveSeq();
-  const matching = relevantGames().filter(g => seq.every((mv, i) => (g.moves[i] || '').replace(/[+#!?]/g,'') === mv));
-  const counts = {};
-  matching.forEach(g => {
-    const next = g.moves[seq.length];
-    if (next) counts[next] = (counts[next] || 0) + 1;
-  });
-  return Object.entries(counts).sort((a,b)=>b[1]-a[1]).slice(0,3);
+  const { counts } = exactNextMoveCounts(seq, relevantGames());
+  return sortCountEntries(counts, 3);
 }
 
 function sortCounts(obj, limit=5){
