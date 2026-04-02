@@ -621,6 +621,11 @@ function stateToFen(state){
   const ep = state.ep === null ? '-' : `${fileOf(state.ep)}${rankOf(state.ep)}`;
   return `${rows.join('/')} ${state.turn} ${castling} ${ep} 0 ${Math.floor(state.history.length / 2) + 1}`;
 }
+function historyToUciMoves(state){
+  return (state.history || [])
+    .filter(h => Number.isInteger(h.from) && h.from >= 0 && Number.isInteger(h.to) && h.to >= 0)
+    .map(h => `${fileOf(h.from)}${rankOf(h.from)}${fileOf(h.to)}${rankOf(h.to)}${(h.promotion || '').toLowerCase()}`);
+}
 function uciToMove(uci){
   if (!uci || uci.length < 4) return null;
   const from = coordToIdx(uci.slice(0, 2));
@@ -1187,7 +1192,7 @@ function initEngine(){
   engineState.status = 'Loading Stockfish';
   updateEngineWidgets();
   try {
-    const worker = new Worker('vendor/stockfish.asm.js');
+    const worker = new Worker('vendor/stockfish17/stockfish-17.1-lite-single-03e3232.js');
     engineState.worker = worker;
     engineState.transport = 'worker';
     worker.onmessage = (event) => handleEngineMessage(event.data || event);
@@ -1222,8 +1227,13 @@ function requestEngineAnalysis(depth=12){
   engineState.lastSeq = getMoveSeq().join(' ');
   engineState.lastFen = stateToFen(GS);
   updateEngineWidgets();
+  const uciMoves = historyToUciMoves(GS);
   engineState.worker.postMessage('stop');
-  engineState.worker.postMessage(`position fen ${engineState.lastFen}`);
+  if (uciMoves.length === GS.history.length) {
+    engineState.worker.postMessage(`position startpos${uciMoves.length ? ` moves ${uciMoves.join(' ')}` : ''}`);
+  } else {
+    engineState.worker.postMessage(`position fen ${engineState.lastFen}`);
+  }
   engineState.worker.postMessage(`go depth ${depth}`);
 }
 function triggerEngineAnalysis(depth=10){
