@@ -550,6 +550,7 @@ let OPGS = createInitialState();
 let openingPrepCursor = 0;
 let GS = { board:[], turn:'w', castling:{wK:1,wQ:1,bK:1,bQ:1}, ep:null, history:[], selSq:null, validMoves:[] };
 let engineState = { worker:null, ready:false, uciok:false, topLines:[], evalCp:0, mate:null, bestMove:'', status:'Loading', timer:null, readyPoll:null, transport:'worker', lastLine:'', lastFen:'', lastSeq:'' };
+let pendingEngineSync = false;
 const PREDICTOR_WEIGHTS = {
   exact: 3.2,
   context3: 2.2,
@@ -863,7 +864,11 @@ function handleClick(i){
 
 function updateMoveList(){
   const el = document.getElementById('move-list');
-  if (!GS.history.length) { el.textContent = '—'; return; }
+  if (!GS.history.length) {
+    el.textContent = '—';
+    syncEngineToBoard(10);
+    return;
+  }
   let t = '';
   for (let i = 0; i < GS.history.length; i++) {
     if (i % 2 === 0) t += (Math.floor(i / 2) + 1) + '. ';
@@ -871,6 +876,7 @@ function updateMoveList(){
   }
   el.textContent = t.trim();
   el.scrollTop = el.scrollHeight;
+  syncEngineToBoard(10);
 }
 
 function normalizeSanToken(token){
@@ -1184,6 +1190,14 @@ function triggerEngineAnalysis(depth=10){
   engineState.status = 'Search requested';
   updateEngineWidgets();
   requestEngineAnalysis(depth);
+}
+function syncEngineToBoard(depth=10){
+  if (pendingEngineSync) return;
+  pendingEngineSync = true;
+  setTimeout(() => {
+    pendingEngineSync = false;
+    triggerEngineAnalysis(depth);
+  }, 0);
 }
 function scheduleEngineAnalysis(depth=12){
   initEngine();
