@@ -549,7 +549,7 @@ let openingPrepFlipped = false;
 let OPGS = createInitialState();
 let openingPrepCursor = 0;
 let GS = { board:[], turn:'w', castling:{wK:1,wQ:1,bK:1,bQ:1}, ep:null, history:[], selSq:null, validMoves:[] };
-let engineState = { worker:null, ready:false, uciok:false, topLines:[], evalCp:0, mate:null, bestMove:'', status:'Loading', timer:null, transport:'worker', lastLine:'' };
+let engineState = { worker:null, ready:false, uciok:false, topLines:[], evalCp:0, mate:null, bestMove:'', status:'Loading', timer:null, readyPoll:null, transport:'worker', lastLine:'' };
 const PREDICTOR_WEIGHTS = {
   exact: 3.2,
   context3: 2.2,
@@ -1082,6 +1082,8 @@ function handleEngineMessage(raw){
   if (line === 'readyok') {
     engineState.ready = true;
     engineState.status = 'Ready';
+    clearInterval(engineState.readyPoll);
+    engineState.readyPoll = null;
     updateEngineWidgets();
     scheduleEngineAnalysis();
     return;
@@ -1131,12 +1133,23 @@ function initEngine(){
       updateEngineWidgets();
     };
     worker.postMessage('uci');
+    clearInterval(engineState.readyPoll);
+    engineState.readyPoll = setInterval(() => {
+      if (engineState.ready) {
+        clearInterval(engineState.readyPoll);
+        engineState.readyPoll = null;
+        return;
+      }
+      engineState.status = engineState.uciok ? 'Waiting for readyok' : 'Warming up engine';
+      updateEngineWidgets();
+      worker.postMessage(engineState.uciok ? 'isready' : 'uci');
+    }, 2000);
     setTimeout(() => {
       if (!engineState.ready) {
-        engineState.status = 'Engine started but not ready';
+        engineState.status = engineState.uciok ? 'Still waiting for readyok' : 'Engine warming up';
         updateEngineWidgets();
       }
-    }, 1500);
+    }, 8000);
   } catch (err) {
     engineState.status = `Engine init failed: ${err?.message || err}`;
     engineState.transport = 'worker';
