@@ -712,8 +712,59 @@ function getValidMovesForState(state, sq){
   return moves;
 }
 
+function findKingSquare(state, color){
+  for (let i = 0; i < 64; i++) {
+    if (state.board[i] === `${color}K`) return i;
+  }
+  return -1;
+}
+
+function isSquareAttacked(state, targetSq, byColor){
+  for (let from = 0; from < 64; from++) {
+    const pc = state.board[from];
+    if (!pc || pc[0] !== byColor) continue;
+    const type = pc[1];
+    const r = R(from);
+    const c = C(from);
+    if (type === 'P') {
+      const d = byColor === 'w' ? -1 : 1;
+      for (const dc of [-1, 1]) {
+        const nr = r + d;
+        const nc = c + dc;
+        if (nr >= 0 && nr < 8 && nc >= 0 && nc < 8 && idx(nc, nr) === targetSq) return true;
+      }
+      continue;
+    }
+    if (getValidMovesForState(state, from).includes(targetSq)) return true;
+  }
+  return false;
+}
+
+function isKingInCheck(state, color){
+  const kingSq = findKingSquare(state, color);
+  if (kingSq < 0) return false;
+  const enemy = color === 'w' ? 'b' : 'w';
+  return isSquareAttacked(state, kingSq, enemy);
+}
+
+function isLegalMoveForState(state, from, to, promotion){
+  const pc = state.board[from];
+  if (!pc) return false;
+  const next = cloneState(state);
+  try {
+    applyMoveToState(next, from, to, promotion);
+  } catch {
+    return false;
+  }
+  return !isKingInCheck(next, pc[0]);
+}
+
+function getLegalMovesForState(state, sq){
+  return getValidMovesForState(state, sq).filter(to => isLegalMoveForState(state, sq, to));
+}
+
 function getValidMoves(sq){
-  return getValidMovesForState(GS, sq);
+  return getLegalMovesForState(GS, sq);
 }
 
 function toNote(from,to,pc,cap){
@@ -1013,7 +1064,8 @@ function sortCountEntries(counts, limit=8){
   return Object.entries(counts || {}).sort((a,b) => b[1] - a[1]).slice(0, limit);
 }
 function isPseudoLegalSan(state, san){
-  return Boolean(sanToMove(cloneState(state), san));
+  const move = sanToMove(cloneState(state), san);
+  return Boolean(move && isLegalMoveForState(state, move.from, move.to, move.promotion));
 }
 function engineScoreText(cp, mate){
   if (mate !== null && mate !== undefined) return mate > 0 ? `#${mate}` : `#-${Math.abs(mate)}`;
@@ -1063,7 +1115,7 @@ function collectFallbackMoves(state){
   for (let from = 0; from < 64; from++) {
     const pc = state.board[from];
     if (!pc || pc[0] !== state.turn) continue;
-    for (const to of getValidMovesForState(state, from)) {
+    for (const to of getLegalMovesForState(state, from)) {
       const next = cloneState(state);
       try {
         const san = applyMoveToState(next, from, to);
