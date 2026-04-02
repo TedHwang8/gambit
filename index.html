@@ -1076,10 +1076,11 @@ function handleEngineMessage(raw){
     engineState.status = 'UCI ready';
     clearInterval(engineState.readyPoll);
     engineState.readyPoll = null;
+    engineState.worker?.postMessage('setoption name UCI_AnalyseMode value true');
     engineState.worker?.postMessage('setoption name Threads value 1');
     engineState.worker?.postMessage('setoption name MultiPV value 3');
     updateEngineWidgets();
-    scheduleEngineAnalysis();
+    setTimeout(() => scheduleEngineAnalysis(10), 250);
     return;
   }
   if (line === 'readyok') {
@@ -1163,12 +1164,11 @@ function requestEngineAnalysis(depth=12){
   if (!engineState.worker || !engineState.ready) return;
   engineState.topLines = [];
   engineState.bestMove = '';
-  engineState.status = 'Analysing';
+  engineState.status = 'Searching';
   updateEngineWidgets();
   engineState.worker.postMessage('stop');
-  engineState.worker.postMessage('ucinewgame');
   engineState.worker.postMessage(`position fen ${stateToFen(GS)}`);
-  engineState.worker.postMessage(`go movetime ${Math.max(200, depth * 40)}`);
+  engineState.worker.postMessage(`go depth ${depth}`);
 }
 function scheduleEngineAnalysis(depth=12){
   initEngine();
