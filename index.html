@@ -549,8 +549,7 @@ let openingPrepFlipped = false;
 let OPGS = createInitialState();
 let openingPrepCursor = 0;
 let GS = { board:[], turn:'w', castling:{wK:1,wQ:1,bK:1,bQ:1}, ep:null, history:[], selSq:null, validMoves:[] };
-let engineState = { worker:null, ready:false, uciok:false, topLines:[], evalCp:0, mate:null, bestMove:'', status:'Loading', timer:null, readyPoll:null, fallbackTimer:null, transport:'worker', lastLine:'', lastFen:'', lastSeq:'', source:'engine' };
-let pendingEngineSync = false;
+let engineState = { worker:null, ready:false, uciok:false, topLines:[], evalCp:0, mate:null, bestMove:'', status:'Loading', timer:null, readyPoll:null, transport:'worker', lastLine:'', lastFen:'', lastSeq:'', source:'engine' };
 const PREDICTOR_WEIGHTS = {
   exact: 3.2,
   context3: 2.2,
@@ -917,7 +916,6 @@ function updateMoveList(){
   const el = document.getElementById('move-list');
   if (!GS.history.length) {
     el.textContent = '—';
-    syncEngineToBoard(10);
     return;
   }
   let t = '';
@@ -927,7 +925,6 @@ function updateMoveList(){
   }
   el.textContent = t.trim();
   el.scrollTop = el.scrollHeight;
-  syncEngineToBoard(10);
 }
 
 function normalizeSanToken(token){
@@ -1102,47 +1099,6 @@ function enginePvToSan(state, pv){
   }
   return sanMoves.join(' ');
 }
-function evaluateMaterial(state){
-  const values = { P:100, N:320, B:330, R:500, Q:900, K:0 };
-  return state.board.reduce((sum, pc) => {
-    if (!pc) return sum;
-    const value = values[pc[1]] || 0;
-    return sum + (pc[0] === 'w' ? value : -value);
-  }, 0);
-}
-function collectFallbackMoves(state){
-  const moves = [];
-  for (let from = 0; from < 64; from++) {
-    const pc = state.board[from];
-    if (!pc || pc[0] !== state.turn) continue;
-    for (const to of getLegalMovesForState(state, from)) {
-      const next = cloneState(state);
-      try {
-        const san = applyMoveToState(next, from, to);
-        moves.push({ from, to, san, evalCp: evaluateMaterial(next) });
-      } catch {}
-    }
-  }
-  return moves;
-}
-function applyFallbackEvaluation(){
-  if (engineState.topLines.length) return;
-  const fallbackMoves = collectFallbackMoves(GS);
-  const turn = GS.turn;
-  const sorted = fallbackMoves.sort((a,b) => turn === 'w' ? b.evalCp - a.evalCp : a.evalCp - b.evalCp).slice(0, 3);
-  engineState.status = 'Fallback evaluation';
-  engineState.source = 'fallback';
-  engineState.topLines = sorted.map(move => ({
-    uci: '',
-    san: move.san,
-    pvSan: move.san,
-    cp: move.evalCp,
-    mate: null
-  }));
-  engineState.evalCp = sorted[0]?.evalCp || evaluateMaterial(GS);
-  engineState.mate = null;
-  updateEngineWidgets();
-}
 function updateEngineWidgets(){
   document.getElementById('engine-status').textContent = engineState.ready ? 'ready' : engineState.status.toLowerCase();
   document.getElementById('eval-score').textContent = engineScoreText(engineState.evalCp, engineState.mate);
@@ -1161,10 +1117,6 @@ function updateEngineWidgets(){
     .filter(Boolean)
     .map((line, i) => `${i + 1}. ${line.san || line.uci || '—'} ${engineScoreText(line.cp, line.mate)} · ${line.pvSan || 'no pv yet'}`)
     .join('\n');
-  if (engineState.source === 'fallback') {
-    text.textContent = `Fallback evaluation only\nThis is not real Stockfish analysis. The browser engine is still not returning search lines, so this backup is showing a rough material-based estimate from the current legal position.\n\nApprox eval: ${engineScoreText(lead.cp, lead.mate)}\nCandidate legal moves: ${engineState.topLines.map(line => line.san || line.uci || '—').join(', ')}\nMove seq sent: ${engineState.lastSeq || 'starting position'}\nFEN sent: ${engineState.lastFen || 'not sent yet'}`;
-    return;
-  }
   text.textContent = `Best move: ${lead.san || lead.uci || '—'}\nEvaluation: ${engineScoreText(lead.cp, lead.mate)}\nMove seq sent: ${engineState.lastSeq || 'starting position'}\nFEN sent: ${engineState.lastFen || 'not sent yet'}\n\nTop engine lines\n${lines}`;
 }
 function handleEngineMessage(raw){
@@ -1178,15 +1130,13 @@ function handleEngineMessage(raw){
   }
   if (line === 'uciok') {
     engineState.uciok = true;
-    engineState.ready = true;
     engineState.status = 'UCI ready';
     clearInterval(engineState.readyPoll);
     engineState.readyPoll = null;
-    engineState.worker?.postMessage('setoption name UCI_AnalyseMode value true');
     engineState.worker?.postMessage('setoption name Threads value 1');
     engineState.worker?.postMessage('setoption name MultiPV value 3');
+    engineState.worker?.postMessage('isready');
     updateEngineWidgets();
-    setTimeout(() => scheduleEngineAnalysis(10), 250);
     return;
   }
   if (line === 'readyok') {
@@ -1253,14 +1203,8 @@ function initEngine(){
       }
       engineState.status = engineState.uciok ? 'Waiting for readyok' : 'Warming up engine';
       updateEngineWidgets();
-      worker.postMessage(engineState.uciok ? 'go movetime 250' : 'uci');
+      worker.postMessage(engineState.uciok ? 'isready' : 'uci');
     }, 2000);
-    setTimeout(() => {
-      if (!engineState.ready) {
-        engineState.status = engineState.uciok ? 'Still waiting for readyok' : 'Engine warming up';
-        updateEngineWidgets();
-      }
-    }, 8000);
   } catch (err) {
     engineState.status = `Engine init failed: ${err?.message || err}`;
     engineState.transport = 'worker';
@@ -1269,7 +1213,6 @@ function initEngine(){
 }
 function requestEngineAnalysis(depth=12){
   if (!engineState.worker || !engineState.ready) return;
-  clearTimeout(engineState.fallbackTimer);
   engineState.source = 'engine';
   engineState.topLines = [];
   engineState.bestMove = '';
@@ -1280,25 +1223,18 @@ function requestEngineAnalysis(depth=12){
   engineState.worker.postMessage('stop');
   engineState.worker.postMessage(`position fen ${engineState.lastFen}`);
   engineState.worker.postMessage(`go depth ${depth}`);
-  engineState.fallbackTimer = setTimeout(() => applyFallbackEvaluation(), 1200);
 }
 function triggerEngineAnalysis(depth=10){
+  initEngine();
   if (!engineState.ready) {
-    initEngine();
+    engineState.status = 'Waiting for Stockfish';
+    updateEngineWidgets();
     return;
   }
   clearTimeout(engineState.timer);
   engineState.status = 'Search requested';
   updateEngineWidgets();
-  requestEngineAnalysis(depth);
-}
-function syncEngineToBoard(depth=10){
-  if (pendingEngineSync) return;
-  pendingEngineSync = true;
-  setTimeout(() => {
-    pendingEngineSync = false;
-    triggerEngineAnalysis(depth);
-  }, 0);
+  engineState.timer = setTimeout(() => requestEngineAnalysis(depth), 120);
 }
 function scheduleEngineAnalysis(depth=12){
   initEngine();
