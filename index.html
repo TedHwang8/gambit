@@ -461,7 +461,6 @@ textarea { resize:vertical; min-height:80px; }
 </div>
 
 <script src="./data/JoelBenjamin.js"></script>
-<script src="vendor/stockfish.asm.js"></script>
 <script>
 const DEMO_PGNS = {
   joelBenjamin: `[Event "2019 U.S. Senior Championship"]
@@ -550,7 +549,7 @@ let openingPrepFlipped = false;
 let OPGS = createInitialState();
 let openingPrepCursor = 0;
 let GS = { board:[], turn:'w', castling:{wK:1,wQ:1,bK:1,bQ:1}, ep:null, history:[], selSq:null, validMoves:[] };
-let engineState = { engine:null, ready:false, topLines:[], evalCp:0, mate:null, bestMove:'', status:'Loading', timer:null, transport:'none', lastLine:'' };
+let engineState = { worker:null, ready:false, uciok:false, topLines:[], evalCp:0, mate:null, bestMove:'', status:'Loading', timer:null, transport:'worker', lastLine:'' };
 const PREDICTOR_WEIGHTS = {
   exact: 3.2,
   context3: 2.2,
@@ -1066,6 +1065,25 @@ function handleEngineMessage(raw){
   const line = String(raw || '').trim();
   if (!line) return;
   engineState.lastLine = line;
+  if (line === 'worker:engine-created') {
+    engineState.status = 'Engine created';
+    updateEngineWidgets();
+    return;
+  }
+  if (line.startsWith('worker:error ')) {
+    engineState.status = line;
+    updateEngineWidgets();
+    return;
+  }
+  if (line === 'uciok') {
+    engineState.uciok = true;
+    engineState.status = 'UCI ready';
+    engineState.worker?.postMessage('setoption name Threads value 1');
+    engineState.worker?.postMessage('setoption name MultiPV value 3');
+    engineState.worker?.postMessage('isready');
+    updateEngineWidgets();
+    return;
+  }
   if (line === 'readyok') {
     engineState.ready = true;
     engineState.status = 'Ready';
@@ -1099,24 +1117,25 @@ function handleEngineMessage(raw){
   updateEngineWidgets();
 }
 function initEngine(){
-  if (engineState.engine) return;
-  engineState.status = 'Loading Stockfish';
-  updateEngineWidgets();
-  if (typeof STOCKFISH !== 'function') {
-    engineState.status = 'Stockfish script missing';
-    engineState.transport = 'script';
-    updateEngineWidgets();
+  if (engineState.worker || typeof Worker === 'undefined') {
+    if (typeof Worker === 'undefined') {
+      engineState.status = 'Worker unsupported';
+      updateEngineWidgets();
+    }
     return;
   }
+  engineState.status = 'Loading Stockfish';
+  updateEngineWidgets();
   try {
-    const engine = STOCKFISH();
-    engineState.engine = engine;
-    engineState.transport = 'main-thread';
-    engine.onmessage = (line) => handleEngineMessage(line);
-    engine.postMessage('uci');
-    engine.postMessage('setoption name Threads value 1');
-    engine.postMessage('setoption name MultiPV value 3');
-    engine.postMessage('isready');
+    const worker = new Worker('vendor/stockfish-worker.js');
+    engineState.worker = worker;
+    engineState.transport = 'worker';
+    worker.onmessage = (event) => handleEngineMessage(event.data || event);
+    worker.onerror = (event) => {
+      engineState.status = `worker:error ${event.message || 'unknown'}`;
+      updateEngineWidgets();
+    };
+    worker.postMessage('uci');
     setTimeout(() => {
       if (!engineState.ready) {
         engineState.status = 'Engine started but not ready';
@@ -1125,24 +1144,24 @@ function initEngine(){
     }, 1500);
   } catch (err) {
     engineState.status = `Engine init failed: ${err?.message || err}`;
-    engineState.transport = 'main-thread';
+    engineState.transport = 'worker';
     updateEngineWidgets();
   }
 }
 function requestEngineAnalysis(depth=12){
-  if (!engineState.engine || !engineState.ready) return;
+  if (!engineState.worker || !engineState.ready) return;
   engineState.topLines = [];
   engineState.bestMove = '';
   engineState.status = 'Analysing';
   updateEngineWidgets();
-  engineState.engine.postMessage('stop');
-  engineState.engine.postMessage('ucinewgame');
-  engineState.engine.postMessage(`position fen ${stateToFen(GS)}`);
-  engineState.engine.postMessage(`go movetime ${Math.max(200, depth * 40)}`);
+  engineState.worker.postMessage('stop');
+  engineState.worker.postMessage('ucinewgame');
+  engineState.worker.postMessage(`position fen ${stateToFen(GS)}`);
+  engineState.worker.postMessage(`go movetime ${Math.max(200, depth * 40)}`);
 }
 function scheduleEngineAnalysis(depth=12){
   initEngine();
-  if (!engineState.engine || !engineState.ready) return;
+  if (!engineState.worker || !engineState.ready) return;
   clearTimeout(engineState.timer);
   engineState.timer = setTimeout(() => requestEngineAnalysis(depth), 120);
 }
