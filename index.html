@@ -1166,12 +1166,13 @@ function handleEngineMessage(raw){
   const mateMatch = line.match(/\bscore mate (-?\d+)/);
   const pv = line.match(/\bpv (.+)$/)?.[1] || '';
   const uci = pv.split(/\s+/)[0] || '';
+  const scoreSign = GS.turn === 'w' ? 1 : -1;
   const entry = {
     uci,
     san: uciToSan(GS, uci),
     pvSan: enginePvToSan(GS, pv),
-    cp: cpMatch ? Number(cpMatch[1]) : 0,
-    mate: mateMatch ? Number(mateMatch[1]) : null
+    cp: cpMatch ? Number(cpMatch[1]) * scoreSign : 0,
+    mate: mateMatch ? Number(mateMatch[1]) * scoreSign : null
   };
   engineState.topLines[multipv - 1] = entry;
   engineState.source = 'engine';
