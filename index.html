@@ -461,6 +461,7 @@ textarea { resize:vertical; min-height:80px; }
 </div>
 
 <script src="./data/JoelBenjamin.js"></script>
+<script src="vendor/stockfish.asm.js"></script>
 <script>
 const DEMO_PGNS = {
   joelBenjamin: `[Event "2019 U.S. Senior Championship"]
@@ -549,7 +550,7 @@ let openingPrepFlipped = false;
 let OPGS = createInitialState();
 let openingPrepCursor = 0;
 let GS = { board:[], turn:'w', castling:{wK:1,wQ:1,bK:1,bQ:1}, ep:null, history:[], selSq:null, validMoves:[] };
-let engineState = { worker:null, ready:false, topLines:[], evalCp:0, mate:null, bestMove:'', status:'Loading', timer:null };
+let engineState = { engine:null, ready:false, topLines:[], evalCp:0, mate:null, bestMove:'', status:'Loading', timer:null, transport:'none', lastLine:'' };
 const PREDICTOR_WEIGHTS = {
   exact: 3.2,
   context3: 2.2,
@@ -1047,7 +1048,7 @@ function updateEngineWidgets(){
   document.getElementById('eval-fill').style.height = `${engineFillPercent(engineState.evalCp, engineState.mate)}%`;
   const text = document.getElementById('engine-text');
   if (!engineState.ready && !engineState.topLines.length) {
-    text.textContent = `Stockfish status: ${engineState.status}.`;
+    text.textContent = `Stockfish status: ${engineState.status}.\nTransport: ${engineState.transport}.\nLast engine line: ${engineState.lastLine || 'none yet'}.`;
     return;
   }
   if (!engineState.topLines.length) {
@@ -1064,6 +1065,7 @@ function updateEngineWidgets(){
 function handleEngineMessage(raw){
   const line = String(raw || '').trim();
   if (!line) return;
+  engineState.lastLine = line;
   if (line === 'readyok') {
     engineState.ready = true;
     engineState.status = 'Ready';
@@ -1097,41 +1099,50 @@ function handleEngineMessage(raw){
   updateEngineWidgets();
 }
 function initEngine(){
-  if (engineState.worker || typeof Worker === 'undefined') {
-    if (typeof Worker === 'undefined') {
-      engineState.status = 'Worker unsupported';
-      updateEngineWidgets();
-    }
-    return;
-  }
+  if (engineState.engine) return;
   engineState.status = 'Loading Stockfish';
   updateEngineWidgets();
-  const worker = new Worker('vendor/stockfish-worker.js');
-  engineState.worker = worker;
-  worker.onmessage = (event) => handleEngineMessage(event.data || event);
-  worker.onerror = () => {
-    engineState.status = 'Engine failed';
+  if (typeof STOCKFISH !== 'function') {
+    engineState.status = 'Stockfish script missing';
+    engineState.transport = 'script';
     updateEngineWidgets();
-  };
-  worker.postMessage('uci');
-  worker.postMessage('setoption name Threads value 1');
-  worker.postMessage('setoption name MultiPV value 3');
-  worker.postMessage('isready');
+    return;
+  }
+  try {
+    const engine = STOCKFISH();
+    engineState.engine = engine;
+    engineState.transport = 'main-thread';
+    engine.onmessage = (line) => handleEngineMessage(line);
+    engine.postMessage('uci');
+    engine.postMessage('setoption name Threads value 1');
+    engine.postMessage('setoption name MultiPV value 3');
+    engine.postMessage('isready');
+    setTimeout(() => {
+      if (!engineState.ready) {
+        engineState.status = 'Engine started but not ready';
+        updateEngineWidgets();
+      }
+    }, 1500);
+  } catch (err) {
+    engineState.status = `Engine init failed: ${err?.message || err}`;
+    engineState.transport = 'main-thread';
+    updateEngineWidgets();
+  }
 }
 function requestEngineAnalysis(depth=12){
-  if (!engineState.worker || !engineState.ready) return;
+  if (!engineState.engine || !engineState.ready) return;
   engineState.topLines = [];
   engineState.bestMove = '';
   engineState.status = 'Analysing';
   updateEngineWidgets();
-  engineState.worker.postMessage('stop');
-  engineState.worker.postMessage('ucinewgame');
-  engineState.worker.postMessage(`position fen ${stateToFen(GS)}`);
-  engineState.worker.postMessage(`go movetime ${Math.max(200, depth * 40)}`);
+  engineState.engine.postMessage('stop');
+  engineState.engine.postMessage('ucinewgame');
+  engineState.engine.postMessage(`position fen ${stateToFen(GS)}`);
+  engineState.engine.postMessage(`go movetime ${Math.max(200, depth * 40)}`);
 }
 function scheduleEngineAnalysis(depth=12){
   initEngine();
-  if (!engineState.worker || !engineState.ready) return;
+  if (!engineState.engine || !engineState.ready) return;
   clearTimeout(engineState.timer);
   engineState.timer = setTimeout(() => requestEngineAnalysis(depth), 120);
 }
