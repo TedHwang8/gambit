@@ -549,7 +549,7 @@ let openingPrepFlipped = false;
 let OPGS = createInitialState();
 let openingPrepCursor = 0;
 let GS = { board:[], turn:'w', castling:{wK:1,wQ:1,bK:1,bQ:1}, ep:null, history:[], selSq:null, validMoves:[] };
-let engineState = { worker:null, ready:false, uciok:false, topLines:[], evalCp:0, mate:null, bestMove:'', status:'Loading', timer:null, readyPoll:null, transport:'worker', lastLine:'' };
+let engineState = { worker:null, ready:false, uciok:false, topLines:[], evalCp:0, mate:null, bestMove:'', status:'Loading', timer:null, readyPoll:null, transport:'worker', lastLine:'', lastFen:'', lastSeq:'' };
 const PREDICTOR_WEIGHTS = {
   exact: 3.2,
   context3: 2.2,
@@ -1050,11 +1050,11 @@ function updateEngineWidgets(){
   document.getElementById('eval-fill').style.height = `${engineFillPercent(engineState.evalCp, engineState.mate)}%`;
   const text = document.getElementById('engine-text');
   if (!engineState.ready && !engineState.topLines.length) {
-    text.textContent = `Stockfish status: ${engineState.status}.\nTransport: ${engineState.transport}.\nLast engine line: ${engineState.lastLine || 'none yet'}.`;
+    text.textContent = `Stockfish status: ${engineState.status}.\nTransport: ${engineState.transport}.\nLast engine line: ${engineState.lastLine || 'none yet'}.\nMove seq sent: ${engineState.lastSeq || 'starting position'}.\nFEN sent: ${engineState.lastFen || 'not sent yet'}.`;
     return;
   }
   if (!engineState.topLines.length) {
-    text.textContent = `Stockfish status: ${engineState.status}.\nTransport: ${engineState.transport}.\nLast engine line: ${engineState.lastLine || 'none yet'}.`;
+    text.textContent = `Stockfish status: ${engineState.status}.\nTransport: ${engineState.transport}.\nLast engine line: ${engineState.lastLine || 'none yet'}.\nMove seq sent: ${engineState.lastSeq || 'starting position'}.\nFEN sent: ${engineState.lastFen || 'not sent yet'}.`;
     return;
   }
   const lead = engineState.topLines[0];
@@ -1062,7 +1062,7 @@ function updateEngineWidgets(){
     .filter(Boolean)
     .map((line, i) => `${i + 1}. ${line.san || line.uci || '—'} ${engineScoreText(line.cp, line.mate)} · ${line.pvSan || 'no pv yet'}`)
     .join('\n');
-  text.textContent = `Best move: ${lead.san || lead.uci || '—'}\nEvaluation: ${engineScoreText(lead.cp, lead.mate)}\n\nTop engine lines\n${lines}`;
+  text.textContent = `Best move: ${lead.san || lead.uci || '—'}\nEvaluation: ${engineScoreText(lead.cp, lead.mate)}\nMove seq sent: ${engineState.lastSeq || 'starting position'}\nFEN sent: ${engineState.lastFen || 'not sent yet'}\n\nTop engine lines\n${lines}`;
 }
 function handleEngineMessage(raw){
   const line = String(raw || '').trim();
@@ -1168,9 +1168,11 @@ function requestEngineAnalysis(depth=12){
   engineState.topLines = [];
   engineState.bestMove = '';
   engineState.status = 'Searching';
+  engineState.lastSeq = getMoveSeq().join(' ');
+  engineState.lastFen = stateToFen(GS);
   updateEngineWidgets();
   engineState.worker.postMessage('stop');
-  engineState.worker.postMessage(`position fen ${stateToFen(GS)}`);
+  engineState.worker.postMessage(`position fen ${engineState.lastFen}`);
   engineState.worker.postMessage(`go depth ${depth}`);
 }
 function triggerEngineAnalysis(depth=10){
