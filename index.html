@@ -549,7 +549,7 @@ let openingPrepFlipped = false;
 let OPGS = createInitialState();
 let openingPrepCursor = 0;
 let GS = { board:[], turn:'w', castling:{wK:1,wQ:1,bK:1,bQ:1}, ep:null, history:[], selSq:null, validMoves:[] };
-let engineState = { worker:null, ready:false, uciok:false, topLines:[], evalCp:0, mate:null, bestMove:'', status:'Loading', timer:null, readyPoll:null, transport:'worker', lastLine:'', lastFen:'', lastSeq:'' };
+let engineState = { worker:null, ready:false, uciok:false, topLines:[], evalCp:0, mate:null, bestMove:'', status:'Loading', timer:null, readyPoll:null, fallbackTimer:null, transport:'worker', lastLine:'', lastFen:'', lastSeq:'' };
 let pendingEngineSync = false;
 const PREDICTOR_WEIGHTS = {
   exact: 3.2,
@@ -1050,6 +1050,46 @@ function enginePvToSan(state, pv){
   }
   return sanMoves.join(' ');
 }
+function evaluateMaterial(state){
+  const values = { P:100, N:320, B:330, R:500, Q:900, K:0 };
+  return state.board.reduce((sum, pc) => {
+    if (!pc) return sum;
+    const value = values[pc[1]] || 0;
+    return sum + (pc[0] === 'w' ? value : -value);
+  }, 0);
+}
+function collectFallbackMoves(state){
+  const moves = [];
+  for (let from = 0; from < 64; from++) {
+    const pc = state.board[from];
+    if (!pc || pc[0] !== state.turn) continue;
+    for (const to of getValidMovesForState(state, from)) {
+      const next = cloneState(state);
+      try {
+        const san = applyMoveToState(next, from, to);
+        moves.push({ from, to, san, evalCp: evaluateMaterial(next) });
+      } catch {}
+    }
+  }
+  return moves;
+}
+function applyFallbackEvaluation(){
+  if (engineState.topLines.length) return;
+  const fallbackMoves = collectFallbackMoves(GS);
+  const turn = GS.turn;
+  const sorted = fallbackMoves.sort((a,b) => turn === 'w' ? b.evalCp - a.evalCp : a.evalCp - b.evalCp).slice(0, 3);
+  engineState.status = 'Fallback evaluation';
+  engineState.topLines = sorted.map(move => ({
+    uci: '',
+    san: move.san,
+    pvSan: move.san,
+    cp: move.evalCp,
+    mate: null
+  }));
+  engineState.evalCp = sorted[0]?.evalCp || evaluateMaterial(GS);
+  engineState.mate = null;
+  updateEngineWidgets();
+}
 function updateEngineWidgets(){
   document.getElementById('engine-status').textContent = engineState.ready ? 'ready' : engineState.status.toLowerCase();
   document.getElementById('eval-score').textContent = engineScoreText(engineState.evalCp, engineState.mate);
@@ -1171,6 +1211,7 @@ function initEngine(){
 }
 function requestEngineAnalysis(depth=12){
   if (!engineState.worker || !engineState.ready) return;
+  clearTimeout(engineState.fallbackTimer);
   engineState.topLines = [];
   engineState.bestMove = '';
   engineState.status = 'Searching';
@@ -1180,6 +1221,7 @@ function requestEngineAnalysis(depth=12){
   engineState.worker.postMessage('stop');
   engineState.worker.postMessage(`position fen ${engineState.lastFen}`);
   engineState.worker.postMessage(`go depth ${depth}`);
+  engineState.fallbackTimer = setTimeout(() => applyFallbackEvaluation(), 1200);
 }
 function triggerEngineAnalysis(depth=10){
   if (!engineState.ready) {
