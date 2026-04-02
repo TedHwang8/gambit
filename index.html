@@ -1106,7 +1106,7 @@ function initEngine(){
   }
   engineState.status = 'Loading Stockfish';
   updateEngineWidgets();
-  const worker = new Worker('vendor/stockfish.js#vendor/stockfish.wasm');
+  const worker = new Worker('vendor/stockfish-worker.js');
   engineState.worker = worker;
   worker.onmessage = (event) => handleEngineMessage(event.data || event);
   worker.onerror = () => {
@@ -1125,8 +1125,9 @@ function requestEngineAnalysis(depth=12){
   engineState.status = 'Analysing';
   updateEngineWidgets();
   engineState.worker.postMessage('stop');
+  engineState.worker.postMessage('ucinewgame');
   engineState.worker.postMessage(`position fen ${stateToFen(GS)}`);
-  engineState.worker.postMessage(`go depth ${depth}`);
+  engineState.worker.postMessage(`go movetime ${Math.max(200, depth * 40)}`);
 }
 function scheduleEngineAnalysis(depth=12){
   initEngine();
