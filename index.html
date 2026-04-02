@@ -1065,11 +1065,6 @@ function handleEngineMessage(raw){
   const line = String(raw || '').trim();
   if (!line) return;
   engineState.lastLine = line;
-  if (line === 'worker:engine-created') {
-    engineState.status = 'Engine created';
-    updateEngineWidgets();
-    return;
-  }
   if (line.startsWith('worker:error ')) {
     engineState.status = line;
     updateEngineWidgets();
@@ -1127,7 +1122,7 @@ function initEngine(){
   engineState.status = 'Loading Stockfish';
   updateEngineWidgets();
   try {
-    const worker = new Worker('vendor/stockfish-worker.js');
+    const worker = new Worker('vendor/stockfish.asm.js');
     engineState.worker = worker;
     engineState.transport = 'worker';
     worker.onmessage = (event) => handleEngineMessage(event.data || event);
