@@ -772,6 +772,7 @@ function makeMove(from,to){
   updateMoveList();
   updateProb();
   renderBoard();
+  triggerEngineAnalysis(10);
 }
 
 function undoMove(){
@@ -785,6 +786,7 @@ function undoMove(){
   updateMoveList();
   updateProb();
   renderBoard();
+  triggerEngineAnalysis(10);
 }
 
 function resetBoard(){
@@ -800,6 +802,7 @@ function resetBoard(){
   updateMoveList();
   updateProb();
   renderBoard();
+  triggerEngineAnalysis(10);
 }
 
 function flipBoard(){ boardFlipped = !boardFlipped; renderBoard(); }
@@ -1169,6 +1172,16 @@ function requestEngineAnalysis(depth=12){
   engineState.worker.postMessage('stop');
   engineState.worker.postMessage(`position fen ${stateToFen(GS)}`);
   engineState.worker.postMessage(`go depth ${depth}`);
+}
+function triggerEngineAnalysis(depth=10){
+  if (!engineState.ready) {
+    initEngine();
+    return;
+  }
+  clearTimeout(engineState.timer);
+  engineState.status = 'Search requested';
+  updateEngineWidgets();
+  engineState.timer = setTimeout(() => requestEngineAnalysis(depth), 80);
 }
 function scheduleEngineAnalysis(depth=12){
   initEngine();
