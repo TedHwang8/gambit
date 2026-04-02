@@ -1072,11 +1072,14 @@ function handleEngineMessage(raw){
   }
   if (line === 'uciok') {
     engineState.uciok = true;
+    engineState.ready = true;
     engineState.status = 'UCI ready';
+    clearInterval(engineState.readyPoll);
+    engineState.readyPoll = null;
     engineState.worker?.postMessage('setoption name Threads value 1');
     engineState.worker?.postMessage('setoption name MultiPV value 3');
-    engineState.worker?.postMessage('isready');
     updateEngineWidgets();
+    scheduleEngineAnalysis();
     return;
   }
   if (line === 'readyok') {
@@ -1142,7 +1145,7 @@ function initEngine(){
       }
       engineState.status = engineState.uciok ? 'Waiting for readyok' : 'Warming up engine';
       updateEngineWidgets();
-      worker.postMessage(engineState.uciok ? 'isready' : 'uci');
+      worker.postMessage(engineState.uciok ? 'go movetime 250' : 'uci');
     }, 2000);
     setTimeout(() => {
       if (!engineState.ready) {
