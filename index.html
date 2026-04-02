@@ -1054,7 +1054,7 @@ function updateEngineWidgets(){
     return;
   }
   if (!engineState.topLines.length) {
-    text.textContent = 'Stockfish is ready and waiting for a position.';
+    text.textContent = `Stockfish status: ${engineState.status}.\nTransport: ${engineState.transport}.\nLast engine line: ${engineState.lastLine || 'none yet'}.`;
     return;
   }
   const lead = engineState.topLines[0];
@@ -1181,7 +1181,7 @@ function triggerEngineAnalysis(depth=10){
   clearTimeout(engineState.timer);
   engineState.status = 'Search requested';
   updateEngineWidgets();
-  engineState.timer = setTimeout(() => requestEngineAnalysis(depth), 80);
+  requestEngineAnalysis(depth);
 }
 function scheduleEngineAnalysis(depth=12){
   initEngine();
