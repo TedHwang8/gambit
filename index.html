@@ -1130,6 +1130,7 @@ function handleEngineMessage(raw){
   }
   if (line === 'uciok') {
     engineState.uciok = true;
+    engineState.ready = true;
     engineState.status = 'UCI ready';
     clearInterval(engineState.readyPoll);
     engineState.readyPoll = null;
@@ -1137,6 +1138,7 @@ function handleEngineMessage(raw){
     engineState.worker?.postMessage('setoption name MultiPV value 3');
     engineState.worker?.postMessage('isready');
     updateEngineWidgets();
+    triggerEngineAnalysis(10);
     return;
   }
   if (line === 'readyok') {
