@@ -60,10 +60,10 @@ textarea { resize:vertical; min-height:80px; }
 .prob-layout { display:grid; grid-template-columns:auto 1fr; gap:2rem; align-items:start; }
 @media(max-width:780px){ .prob-layout{grid-template-columns:1fr;} }
 .board-wrap { display:flex; flex-direction:column; align-items:center; gap:0.8rem; }
-.board-coords-wrap { display:flex; align-items:stretch; gap:3px; }
-.eval-wrap { display:flex; flex-direction:column; align-items:center; gap:0.35rem; margin-left:0.35rem; }
+.board-coords-wrap { display:flex; align-items:stretch; justify-content:center; gap:3px; }
+.eval-wrap { display:flex; flex:0 0 24px; flex-direction:column; align-items:center; gap:0.35rem; margin-left:0.35rem; }
 .eval-score { font-family:'JetBrains Mono',monospace; font-size:0.62rem; color:var(--ink); min-height:0.9rem; }
-.eval-bar { position:relative; width:18px; height:496px; border:1px solid var(--border); background:#111; overflow:hidden; }
+.eval-bar { position:relative; width:18px; min-width:18px; height:496px; border:1px solid var(--border); background:#111; overflow:hidden; }
 .eval-fill { position:absolute; left:0; right:0; bottom:0; height:50%; background:var(--parchment); transition:height 0.25s ease; }
 .eval-marker { position:absolute; left:-2px; right:-2px; top:50%; height:2px; background:var(--gold); opacity:0.9; }
 .eval-status { font-family:'JetBrains Mono',monospace; font-size:0.5rem; color:var(--muted); writing-mode:vertical-rl; transform:rotate(180deg); letter-spacing:0.08em; text-transform:uppercase; min-height:80px; text-align:center; }
