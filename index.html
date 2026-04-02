@@ -549,7 +549,7 @@ let openingPrepFlipped = false;
 let OPGS = createInitialState();
 let openingPrepCursor = 0;
 let GS = { board:[], turn:'w', castling:{wK:1,wQ:1,bK:1,bQ:1}, ep:null, history:[], selSq:null, validMoves:[] };
-let engineState = { worker:null, ready:false, uciok:false, topLines:[], evalCp:0, mate:null, bestMove:'', status:'Loading', timer:null, readyPoll:null, fallbackTimer:null, transport:'worker', lastLine:'', lastFen:'', lastSeq:'' };
+let engineState = { worker:null, ready:false, uciok:false, topLines:[], evalCp:0, mate:null, bestMove:'', status:'Loading', timer:null, readyPoll:null, fallbackTimer:null, transport:'worker', lastLine:'', lastFen:'', lastSeq:'', source:'engine' };
 let pendingEngineSync = false;
 const PREDICTOR_WEIGHTS = {
   exact: 3.2,
@@ -1131,6 +1131,7 @@ function applyFallbackEvaluation(){
   const turn = GS.turn;
   const sorted = fallbackMoves.sort((a,b) => turn === 'w' ? b.evalCp - a.evalCp : a.evalCp - b.evalCp).slice(0, 3);
   engineState.status = 'Fallback evaluation';
+  engineState.source = 'fallback';
   engineState.topLines = sorted.map(move => ({
     uci: '',
     san: move.san,
@@ -1160,6 +1161,10 @@ function updateEngineWidgets(){
     .filter(Boolean)
     .map((line, i) => `${i + 1}. ${line.san || line.uci || '—'} ${engineScoreText(line.cp, line.mate)} · ${line.pvSan || 'no pv yet'}`)
     .join('\n');
+  if (engineState.source === 'fallback') {
+    text.textContent = `Fallback evaluation only\nThis is not real Stockfish analysis. The browser engine is still not returning search lines, so this backup is showing a rough material-based estimate from the current legal position.\n\nApprox eval: ${engineScoreText(lead.cp, lead.mate)}\nCandidate legal moves: ${engineState.topLines.map(line => line.san || line.uci || '—').join(', ')}\nMove seq sent: ${engineState.lastSeq || 'starting position'}\nFEN sent: ${engineState.lastFen || 'not sent yet'}`;
+    return;
+  }
   text.textContent = `Best move: ${lead.san || lead.uci || '—'}\nEvaluation: ${engineScoreText(lead.cp, lead.mate)}\nMove seq sent: ${engineState.lastSeq || 'starting position'}\nFEN sent: ${engineState.lastFen || 'not sent yet'}\n\nTop engine lines\n${lines}`;
 }
 function handleEngineMessage(raw){
@@ -1212,6 +1217,7 @@ function handleEngineMessage(raw){
     mate: mateMatch ? Number(mateMatch[1]) : null
   };
   engineState.topLines[multipv - 1] = entry;
+  engineState.source = 'engine';
   if (multipv === 1) {
     engineState.evalCp = entry.cp;
     engineState.mate = entry.mate;
@@ -1264,6 +1270,7 @@ function initEngine(){
 function requestEngineAnalysis(depth=12){
   if (!engineState.worker || !engineState.ready) return;
   clearTimeout(engineState.fallbackTimer);
+  engineState.source = 'engine';
   engineState.topLines = [];
   engineState.bestMove = '';
   engineState.status = 'Searching';
