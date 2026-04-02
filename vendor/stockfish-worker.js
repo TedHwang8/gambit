@@ -1,6 +1,6 @@
-importScripts('./stockfish.js');
+importScripts('./stockfish.asm.js');
 
-const engine = STOCKFISH('./stockfish.wasm');
+const engine = STOCKFISH();
 
 self.onmessage = (event) => {
   engine.postMessage(event.data);
