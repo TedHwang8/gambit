@@ -61,6 +61,12 @@ textarea { resize:vertical; min-height:80px; }
 @media(max-width:780px){ .prob-layout{grid-template-columns:1fr;} }
 .board-wrap { display:flex; flex-direction:column; align-items:center; gap:0.8rem; }
 .board-coords-wrap { display:flex; align-items:stretch; gap:3px; }
+.eval-wrap { display:flex; flex-direction:column; align-items:center; gap:0.35rem; margin-left:0.35rem; }
+.eval-score { font-family:'JetBrains Mono',monospace; font-size:0.62rem; color:var(--ink); min-height:0.9rem; }
+.eval-bar { position:relative; width:18px; height:496px; border:1px solid var(--border); background:#111; overflow:hidden; }
+.eval-fill { position:absolute; left:0; right:0; bottom:0; height:50%; background:var(--parchment); transition:height 0.25s ease; }
+.eval-marker { position:absolute; left:-2px; right:-2px; top:50%; height:2px; background:var(--gold); opacity:0.9; }
+.eval-status { font-family:'JetBrains Mono',monospace; font-size:0.5rem; color:var(--muted); writing-mode:vertical-rl; transform:rotate(180deg); letter-spacing:0.08em; text-transform:uppercase; min-height:80px; text-align:center; }
 .coord-rank { display:flex; flex-direction:column; justify-content:space-around; }
 .coord-rank span,.coord-file span { font-family:'JetBrains Mono',monospace; font-size:0.52rem; color:var(--muted); display:flex; align-items:center; justify-content:center; }
 .coord-rank span { width:14px; }
@@ -69,6 +75,7 @@ textarea { resize:vertical; min-height:80px; }
 .chess-board { display:grid; grid-template-columns:repeat(8,1fr); border:2px solid #555; user-select:none; }
 .sq { width:62px; height:62px; display:flex; align-items:center; justify-content:center; cursor:pointer; position:relative; transition:background 0.1s; font-size:2.1rem; line-height:1; touch-action:manipulation; }
 @media(max-width:520px){ .sq{width:42px;height:42px;font-size:1.5rem;} }
+@media(max-width:520px){ .eval-bar{height:336px;} }
 .sq.light{background:var(--white-sq)} .sq.dark{background:var(--black-sq)}
 .sq.sel{background:rgba(201,168,76,0.55) !important;}
 .sq.vmove::after { content:''; position:absolute; width:30%; height:30%; background:rgba(20,85,30,0.5); border-radius:50%; pointer-events:none; }
@@ -196,6 +203,14 @@ textarea { resize:vertical; min-height:80px; }
           <div class="chess-board" id="chess-board"></div>
           <div class="coord-file" id="coord-file"></div>
         </div>
+        <div class="eval-wrap">
+          <div class="eval-score" id="eval-score">0.0</div>
+          <div class="eval-bar" aria-label="Stockfish evaluation bar">
+            <div class="eval-fill" id="eval-fill"></div>
+            <div class="eval-marker"></div>
+          </div>
+          <div class="eval-status" id="engine-status">loading</div>
+        </div>
       </div>
       <div class="board-controls">
         <button class="btn btn-ghost btn-sm" onclick="resetBoard()">Reset</button>
@@ -234,6 +249,10 @@ textarea { resize:vertical; min-height:80px; }
       <div id="insight-wrap" style="display:none">
         <div class="sec-title">AI insight</div>
         <div class="insight-box"><div class="output-text" id="insight-text"></div></div>
+      </div>
+      <div>
+        <div class="sec-title">Stockfish</div>
+        <div class="insight-box"><div class="output-text" id="engine-text">Loading Stockfish…</div></div>
       </div>
     </div>
   </div>
@@ -530,6 +549,7 @@ let openingPrepFlipped = false;
 let OPGS = createInitialState();
 let openingPrepCursor = 0;
 let GS = { board:[], turn:'w', castling:{wK:1,wQ:1,bK:1,bQ:1}, ep:null, history:[], selSq:null, validMoves:[] };
+let engineState = { worker:null, ready:false, topLines:[], evalCp:0, mate:null, bestMove:'', status:'Loading', timer:null };
 const PREDICTOR_WEIGHTS = {
   exact: 3.2,
   context3: 2.2,
@@ -562,6 +582,52 @@ function idx(c,r){ return r * 8 + c; }
 function rkOf(i){ return 8 - R(i); }
 function fileOf(i){ return 'abcdefgh'[C(i)]; }
 function rankOf(i){ return String(rkOf(i)); }
+function coordToIdx(coord){
+  if (!coord || coord.length < 2) return null;
+  const file = 'abcdefgh'.indexOf(coord[0]);
+  const rank = Number(coord[1]);
+  if (file < 0 || Number.isNaN(rank)) return null;
+  return idx(file, 8 - rank);
+}
+function cloneState(state){
+  return {
+    board: [...state.board],
+    turn: state.turn,
+    castling: { ...state.castling },
+    ep: state.ep,
+    history: state.history.map(h => ({ ...h })),
+    selSq: null,
+    validMoves: []
+  };
+}
+function stateToFen(state){
+  const rows = [];
+  for (let r = 0; r < 8; r++) {
+    let empty = 0;
+    let row = '';
+    for (let c = 0; c < 8; c++) {
+      const pc = state.board[idx(c, r)];
+      if (!pc) {
+        empty += 1;
+        continue;
+      }
+      if (empty) { row += String(empty); empty = 0; }
+      row += pc[0] === 'w' ? pc[1] : pc[1].toLowerCase();
+    }
+    if (empty) row += String(empty);
+    rows.push(row);
+  }
+  const castling = `${state.castling.wK ? 'K' : ''}${state.castling.wQ ? 'Q' : ''}${state.castling.bK ? 'k' : ''}${state.castling.bQ ? 'q' : ''}` || '-';
+  const ep = state.ep === null ? '-' : `${fileOf(state.ep)}${rankOf(state.ep)}`;
+  return `${rows.join('/')} ${state.turn} ${castling} ${ep} 0 ${Math.floor(state.history.length / 2) + 1}`;
+}
+function uciToMove(uci){
+  if (!uci || uci.length < 4) return null;
+  const from = coordToIdx(uci.slice(0, 2));
+  const to = coordToIdx(uci.slice(2, 4));
+  if (from === null || to === null) return null;
+  return { from, to, promotion: uci[4] ? uci[4].toUpperCase() : null };
+}
 function createInitialState(){
   return {
     board: fenToBoard('rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1'),
@@ -937,6 +1003,137 @@ function countTotal(counts){
 function sortCountEntries(counts, limit=8){
   return Object.entries(counts || {}).sort((a,b) => b[1] - a[1]).slice(0, limit);
 }
+function isPseudoLegalSan(state, san){
+  return Boolean(sanToMove(cloneState(state), san));
+}
+function engineScoreText(cp, mate){
+  if (mate !== null && mate !== undefined) return mate > 0 ? `#${mate}` : `#-${Math.abs(mate)}`;
+  const pawns = (cp || 0) / 100;
+  return `${pawns >= 0 ? '+' : ''}${pawns.toFixed(1)}`;
+}
+function engineFillPercent(cp, mate){
+  if (mate !== null && mate !== undefined) return mate > 0 ? 97 : 3;
+  return Math.max(3, Math.min(97, 50 + 45 * Math.tanh((cp || 0) / 220)));
+}
+function uciToSan(state, uci){
+  const move = uciToMove(uci);
+  if (!move) return '';
+  const testState = cloneState(state);
+  if (!testState.board[move.from]) return '';
+  try {
+    return applyMoveToState(testState, move.from, move.to, move.promotion);
+  } catch {
+    return '';
+  }
+}
+function enginePvToSan(state, pv){
+  if (!pv) return '';
+  const testState = cloneState(state);
+  const sanMoves = [];
+  for (const uci of pv.split(/\s+/).slice(0, 6)) {
+    const move = uciToMove(uci);
+    if (!move || !testState.board[move.from]) break;
+    try {
+      sanMoves.push(applyMoveToState(testState, move.from, move.to, move.promotion));
+    } catch {
+      break;
+    }
+  }
+  return sanMoves.join(' ');
+}
+function updateEngineWidgets(){
+  document.getElementById('engine-status').textContent = engineState.ready ? 'ready' : engineState.status.toLowerCase();
+  document.getElementById('eval-score').textContent = engineScoreText(engineState.evalCp, engineState.mate);
+  document.getElementById('eval-fill').style.height = `${engineFillPercent(engineState.evalCp, engineState.mate)}%`;
+  const text = document.getElementById('engine-text');
+  if (!engineState.ready && !engineState.topLines.length) {
+    text.textContent = `Stockfish status: ${engineState.status}.`;
+    return;
+  }
+  if (!engineState.topLines.length) {
+    text.textContent = 'Stockfish is ready and waiting for a position.';
+    return;
+  }
+  const lead = engineState.topLines[0];
+  const lines = engineState.topLines
+    .filter(Boolean)
+    .map((line, i) => `${i + 1}. ${line.san || line.uci || '—'} ${engineScoreText(line.cp, line.mate)} · ${line.pvSan || 'no pv yet'}`)
+    .join('\n');
+  text.textContent = `Best move: ${lead.san || lead.uci || '—'}\nEvaluation: ${engineScoreText(lead.cp, lead.mate)}\n\nTop engine lines\n${lines}`;
+}
+function handleEngineMessage(raw){
+  const line = String(raw || '').trim();
+  if (!line) return;
+  if (line === 'readyok') {
+    engineState.ready = true;
+    engineState.status = 'Ready';
+    updateEngineWidgets();
+    scheduleEngineAnalysis();
+    return;
+  }
+  if (line.startsWith('bestmove ')) {
+    engineState.bestMove = line.split(/\s+/)[1] || '';
+    updateEngineWidgets();
+    return;
+  }
+  if (!line.startsWith('info ') || !line.includes(' pv ')) return;
+  const multipv = Number(line.match(/\bmultipv (\d+)/)?.[1] || '1');
+  const cpMatch = line.match(/\bscore cp (-?\d+)/);
+  const mateMatch = line.match(/\bscore mate (-?\d+)/);
+  const pv = line.match(/\bpv (.+)$/)?.[1] || '';
+  const uci = pv.split(/\s+/)[0] || '';
+  const entry = {
+    uci,
+    san: uciToSan(GS, uci),
+    pvSan: enginePvToSan(GS, pv),
+    cp: cpMatch ? Number(cpMatch[1]) : 0,
+    mate: mateMatch ? Number(mateMatch[1]) : null
+  };
+  engineState.topLines[multipv - 1] = entry;
+  if (multipv === 1) {
+    engineState.evalCp = entry.cp;
+    engineState.mate = entry.mate;
+  }
+  updateEngineWidgets();
+}
+function initEngine(){
+  if (engineState.worker || typeof Worker === 'undefined') {
+    if (typeof Worker === 'undefined') {
+      engineState.status = 'Worker unsupported';
+      updateEngineWidgets();
+    }
+    return;
+  }
+  engineState.status = 'Loading Stockfish';
+  updateEngineWidgets();
+  const worker = new Worker('vendor/stockfish.js#vendor/stockfish.wasm');
+  engineState.worker = worker;
+  worker.onmessage = (event) => handleEngineMessage(event.data || event);
+  worker.onerror = () => {
+    engineState.status = 'Engine failed';
+    updateEngineWidgets();
+  };
+  worker.postMessage('uci');
+  worker.postMessage('setoption name Threads value 1');
+  worker.postMessage('setoption name MultiPV value 3');
+  worker.postMessage('isready');
+}
+function requestEngineAnalysis(depth=12){
+  if (!engineState.worker || !engineState.ready) return;
+  engineState.topLines = [];
+  engineState.bestMove = '';
+  engineState.status = 'Analysing';
+  updateEngineWidgets();
+  engineState.worker.postMessage('stop');
+  engineState.worker.postMessage(`position fen ${stateToFen(GS)}`);
+  engineState.worker.postMessage(`go depth ${depth}`);
+}
+function scheduleEngineAnalysis(depth=12){
+  initEngine();
+  if (!engineState.worker || !engineState.ready) return;
+  clearTimeout(engineState.timer);
+  engineState.timer = setTimeout(() => requestEngineAnalysis(depth), 120);
+}
 
 function buildNextMoveModel(games){
   const opponentPlyIndex = opponentColorCode() === 'w' ? 0 : 1;
@@ -1113,6 +1310,7 @@ function updateProb(){
   const total = scopedGames.length;
   const modelBox = document.getElementById('model-prediction');
   const exactBox = document.getElementById('prob-bars');
+  scheduleEngineAnalysis();
   document.getElementById('pi-total').textContent = total;
   document.getElementById('pi-depth').textContent = depth;
   document.getElementById('pi-move').textContent = depth ? seq[depth - 1] : '—';
@@ -1135,7 +1333,10 @@ function updateProb(){
   const opponentPlyIndex = opponentColorCode() === 'w' ? 0 : 1;
   const firstMoveHint = normalizeMoveToken(seq[opponentPlyIndex] || analyzeLibrary().topFirstMoves[0]?.[0] || '');
   const blended = blendMoveScores(model, seq, exactCounts, openingHint, firstMoveHint);
-  const sorted = Object.entries(blended.scores).sort((a,b)=>b[1]-a[1]).slice(0,8);
+  const sorted = Object.entries(blended.scores)
+    .filter(([mv]) => isPseudoLegalSan(GS, mv))
+    .sort((a,b)=>b[1]-a[1])
+    .slice(0,8);
   if (!sorted.length) {
     modelBox.innerHTML = `<div class="prob-empty">The library is loaded, but there isn’t enough training data for this position yet.<br><span style="font-size:0.88em">Import more games or rewind to an earlier branch.</span></div>`;
     exactBox.innerHTML = matching.length
@@ -1147,7 +1348,7 @@ function updateProb(){
   const maxScore = sorted[0][1] || 1;
   const leader = sorted[0][0];
   const driver = describePredictionSource(blended.moveSources[leader]?.key);
-  modelBox.innerHTML = `<div class="model-box"><div class="model-label">Predictive model output</div><div class="model-meta">Trained on ${model.positions} opponent-to-move positions. Strongest signal right now: ${driver}. This section blends exact line matches with learned context from similar positions, move depth, opening family, and the opponent's first-move habits.</div>${renderMoveBars(sorted, totalScore, maxScore, (value, totalValue) => Math.round(value / totalValue * 100), (mv) => exactCounts[mv] ? `${exactCounts[mv]} exact` : 'model')}</div>`;
+  modelBox.innerHTML = `<div class="model-box"><div class="model-label">Predictive model output</div><div class="model-meta">Trained on ${model.positions} opponent-to-move positions. Strongest signal right now: ${driver}. This section blends exact line matches with learned context from similar positions, move depth, opening family, and the opponent's first-move habits. Displayed moves are filtered against the current board before they are shown.</div>${renderMoveBars(sorted, totalScore, maxScore, (value, totalValue) => Math.round(value / totalValue * 100), (mv) => exactCounts[mv] ? `${exactCounts[mv]} exact` : 'model')}</div>`;
   const exactSorted = sortCountEntries(exactCounts, 8);
   if (!exactSorted.length) {
     exactBox.innerHTML = `<div class="prob-empty">No exact library games match this line after move ${depth}.<br><span style="font-size:0.88em">The model above is extrapolating from similar positions instead.</span></div>`;
@@ -1833,10 +2034,14 @@ async function fauxThink(render){
 async function analyzePosition(){
   document.getElementById('insight-wrap').style.display = 'block';
   const txt = document.getElementById('insight-text');
-  await fauxThink((loading) => {
-    txt.innerHTML = loading ? '<div class="thinking"><span class="dot"></span><span class="dot"></span><span class="dot"></span>&nbsp;Analysing…</div>' : '';
-  });
-  const text = localPositionInsight();
+  txt.innerHTML = '<div class="thinking"><span class="dot"></span><span class="dot"></span><span class="dot"></span>&nbsp;Running Stockfish…</div>';
+  scheduleEngineAnalysis(15);
+  await sleep(900);
+  const lead = engineState.topLines[0];
+  const engineSummary = lead
+    ? `Engine best move: ${lead.san || lead.uci}\nEvaluation: ${engineScoreText(lead.cp, lead.mate)}\nPV: ${lead.pvSan || '—'}\n\n`
+    : 'Engine is still warming up.\n\n';
+  const text = `${engineSummary}${localPositionInsight()}`;
   txt.textContent = text;
   addHistoryCard('Position insight', text);
 }
@@ -1928,6 +2133,8 @@ resetOpeningPrepBoard();
 renderOpeningTree();
 renderAntiBenjaminLines([]);
 refreshLibraryUI();
+initEngine();
+updateEngineWidgets();
 
 document.getElementById('chess-board').addEventListener('click', (ev) => {
   const sq = ev.target.closest('.sq');
